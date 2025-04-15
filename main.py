@@ -110,20 +110,35 @@ class ccb(Star):
                     data = json.load(f)
 
                 if not data:
-                    yield event.plain_result("排行榜是空的，大家都还没开始ccb呢~")
+                    yield event.chain_result([Comp.Plain("排行榜是空的，大家都还没开始ccb呢~")])
                     return
 
-                # 排序，按照 num（次数）从高到低
+                # 按照 num（次数）从高到低排序，取前5
                 top_data = sorted(data, key=lambda x: x.get("num", 0), reverse=True)[:5]
 
-                message_lines = ["📈 CCB排行榜前五名：\n"]
-                for idx, item in enumerate(top_data, 1):
-                    user_id = item.get("id", "未知")
-                    num = item.get("num", 0)
-                    message_lines.append(f"{idx}. {user_id}：{num}次")
+                if event.get_platform_name() == "aiocqhttp":
+                    from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
+                    assert isinstance(event, AiocqhttpMessageEvent)
+                    client = event.bot
 
-                result_message = "\n".join(message_lines)
-                yield event.plain_result(result_message)
+                    msg_chain = [Comp.Plain("📈 CCB排行榜前五名：\n")]
+                    for idx, item in enumerate(top_data, 1):
+                        user_id = item.get("id", "未知")
+                        num = item.get("num", 0)
+                        vol = item.get("vol", 0)
+
+                        try:
+                            stranger_payloads = {"user_id": user_id}
+                            stranger_info: dict = await client.api.call_action('get_stranger_info', **stranger_payloads)
+                            nickname = stranger_info.get("nick", "未知昵称")
+                        except Exception as e:
+                            logger.warning(f"获取昵称失败：{e}")
+                            nickname = "未知昵称"
+
+                        msg_chain.append(Comp.Plain(f"{idx}. {nickname}（{user_id}）：{num}次，累计 {vol:.2f}ml\n"))
+
+                    yield event.chain_result(msg_chain)
+
             except Exception as e:
                 logger.error(f"ccbtop 出错: {e}")
-                yield event.plain_result("排行榜加载失败了，请稍后再试~")
+                yield event.chain_result([Comp.Plain("排行榜加载失败了，请稍后再试~")])
