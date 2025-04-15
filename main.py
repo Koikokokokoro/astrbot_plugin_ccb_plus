@@ -95,6 +95,7 @@ class ccb(Star):
                 logger.error(f"报错: {e}")
                 yield event.plain_result("对方拒绝了和你ccb")
 
+    #艾草排行榜（我写这个干什么
     @filter.command("ccbtop")
     async def ccbtop(self, event: AstrMessageEvent):
         """
@@ -112,7 +113,7 @@ class ccb(Star):
         sorted_data = sorted(data, key=lambda x: int(x.get(a2, 0)), reverse=True)
         top5 = sorted_data[:5]
 
-        ranking_message = "ccb排行榜TOP5：\n"
+        ranking_message = "艾草排行榜TOP5：\n"
         # 遍历排行榜记录
         for idx, record in enumerate(top5, start=1):
             user_id = record.get(a1)
@@ -129,5 +130,41 @@ class ccb(Star):
                 except Exception as e:
                     logger.error(f"获取用户昵称失败: {e}")
             # 使用格式化字符串确保累计注入量只有两位小数显示
-            ranking_message += f"{idx}. {nickname} - ccb次数：{record.get(a2, 0)}，累计注入：{float(record.get(a3, 0)):.2f}ml\n"
+            ranking_message += f"{idx}. {nickname} - 艾草次数：{record.get(a2, 0)}，累计被注入：{float(record.get(a3, 0)):.2f}ml\n"
+        yield event.plain_result(ranking_message)
+
+    # 好喝爱喝排行榜）
+    @filter.command("ccbvol")
+    async def ccbvol(self, event: AstrMessageEvent):
+        """
+        排行榜功能：按累计注入量(vol)从高到低排序，只展示前五名
+        """
+        try:
+            with open(DATA_FILE, 'r') as f:
+                data = json.load(f)
+        except Exception as e:
+            logger.error(f"读取数据错误: {e}")
+            yield event.plain_result("无法读取排行榜数据，请稍后重试。")
+            return
+
+        # 按累计注入量(vol)从高到低排序，将 vol 强制转换为 float（保留两位小数）
+        sorted_data = sorted(data, key=lambda x: float(x.get(a3, 0)), reverse=True)
+        top5 = sorted_data[:5]
+
+        ranking_message = "食荆州排行榜TOP5：\n"
+        for idx, record in enumerate(top5, start=1):
+            user_id = record.get(a1)
+            nickname = user_id
+            if event.get_platform_name() == "aiocqhttp":
+                try:
+                    from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
+                    assert isinstance(event, AiocqhttpMessageEvent)
+                    client = event.bot
+                    stranger_payloads = {"user_id": user_id}
+                    stranger_info: dict = await client.api.call_action('get_stranger_info', **stranger_payloads)
+                    nickname = stranger_info.get('nick', user_id)
+                except Exception as e:
+                    logger.error(f"获取用户昵称失败: {e}")
+            # 使用格式化字符串输出两位小数的累计注入量
+            ranking_message += f"{idx}. {nickname} - 累计食荆州：{float(record.get(a3, 0)):.2f}ml，艾草次数：{record.get(a2, 0)}\n"
         yield event.plain_result(ranking_message)
