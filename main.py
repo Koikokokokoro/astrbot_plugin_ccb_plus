@@ -102,43 +102,43 @@ class ccb(Star):
                 logger.error(f"报错: {e}")
                 yield event.plain_result("对方拒绝了和你ccb")
 
-        # 排行榜（为什么需要这个？）
-        @filter.command("ccbtop")
-        async def ccbtop(self, event: AstrMessageEvent):
-            try:
-                with open(DATA_FILE, 'r') as f:
-                    data = json.load(f)
+    # 排行榜（为什么需要这个？）
+    @filter.command("ccbtop")
+    async def ccbtop(self, event: AstrMessageEvent):
+        try:
+            with open(DATA_FILE, 'r') as f:
+                data = json.load(f)
 
-                if not data:
-                    yield event.chain_result([Comp.Plain("排行榜是空的，大家都还没开始ccb呢~")])
-                    return
+            if not data:
+                yield event.chain_result([Comp.Plain("排行榜是空的，大家都还没开始ccb呢~")])
+                return
 
-                # 按照 num（次数）从高到低排序，取前5
-                top_data = sorted(data, key=lambda x: x.get("num", 0), reverse=True)[:5]
+            # 按照 num（次数）从高到低排序，取前5
+            top_data = sorted(data, key=lambda x: x.get("num", 0), reverse=True)[:5]
 
-                if event.get_platform_name() == "aiocqhttp":
-                    from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
-                    assert isinstance(event, AiocqhttpMessageEvent)
-                    client = event.bot
+            if event.get_platform_name() == "aiocqhttp":
+                from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
+                assert isinstance(event, AiocqhttpMessageEvent)
+                client = event.bot
 
-                    msg_chain = [Comp.Plain("📈 CCB排行榜前五名：\n")]
-                    for idx, item in enumerate(top_data, 1):
-                        user_id = item.get("id", "未知")
-                        num = item.get("num", 0)
-                        vol = item.get("vol", 0)
+                msg_chain = [Comp.Plain("📈 CCB排行榜前五名：\n")]
+                for idx, item in enumerate(top_data, 1):
+                    user_id = item.get("id", "未知")
+                    num = item.get("num", 0)
+                    vol = item.get("vol", 0)
 
-                        try:
-                            stranger_payloads = {"user_id": user_id}
-                            stranger_info: dict = await client.api.call_action('get_stranger_info', **stranger_payloads)
-                            nickname = stranger_info.get("nick", "未知昵称")
-                        except Exception as e:
-                            logger.warning(f"获取昵称失败：{e}")
-                            nickname = "未知昵称"
+                    try:
+                        stranger_payloads = {"user_id": user_id}
+                        stranger_info: dict = await client.api.call_action('get_stranger_info', **stranger_payloads)
+                        nickname = stranger_info.get("nick", "未知昵称")
+                    except Exception as e:
+                        logger.warning(f"获取昵称失败：{e}")
+                        nickname = "未知昵称"
 
-                        msg_chain.append(Comp.Plain(f"{idx}. {nickname}（{user_id}）：{num}次，累计 {vol:.2f}ml\n"))
+                    msg_chain.append(Comp.Plain(f"{idx}. {nickname}（{user_id}）：{num}次，累计 {vol:.2f}ml\n"))
 
-                    yield event.chain_result(msg_chain)
+                yield event.chain_result(msg_chain)
 
-            except Exception as e:
-                logger.error(f"ccbtop 出错: {e}")
-                yield event.chain_result([Comp.Plain("排行榜加载失败了，请稍后再试~")])
+        except Exception as e:
+            logger.error(f"ccbtop 出错: {e}")
+            yield event.chain_result([Comp.Plain("排行榜加载失败了，请稍后再试~")])
