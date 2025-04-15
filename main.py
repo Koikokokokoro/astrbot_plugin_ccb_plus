@@ -105,8 +105,8 @@ class ccb(Star):
             yield event.plain_result("无法读取排行榜数据，请稍后重试。")
             return
 
-        # 按 num 从高到低排序
-        sorted_data = sorted(data, key=lambda x: x.get(a2, 0), reverse=True)
+        # 按 num 从高到低排序，将 num 强制转换为整数
+        sorted_data = sorted(data, key=lambda x: int(x.get(a2, 0)), reverse=True)
         top5 = sorted_data[:5]
 
         ranking_message = "ccb排行榜TOP5：\n"
