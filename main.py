@@ -130,7 +130,7 @@ class ccb(Star):
                 except Exception as e:
                     logger.error(f"获取用户昵称失败: {e}")
             # 使用格式化字符串确保累计注入量只有两位小数显示
-            ranking_message += f"{idx}. {nickname} - 艾草次数：{record.get(a2, 0)}，累计被注入：{float(record.get(a3, 0)):.2f}ml\n"
+            ranking_message += f"{idx}. {nickname} - 艾草次数：{record.get(a2, 0)}\n"
         yield event.plain_result(ranking_message)
 
     # 好喝爱喝排行榜）
@@ -166,5 +166,5 @@ class ccb(Star):
                 except Exception as e:
                     logger.error(f"获取用户昵称失败: {e}")
             # 使用格式化字符串输出两位小数的累计注入量
-            ranking_message += f"{idx}. {nickname} - 累计食荆州：{float(record.get(a3, 0)):.2f}ml，艾草次数：{record.get(a2, 0)}\n"
+            ranking_message += f"{idx}. {nickname} - 累计食荆州：{float(record.get(a3, 0)):.2f}ml\n"
         yield event.plain_result(ranking_message)
