@@ -7,7 +7,7 @@ import json
 import random
 import os
 
-DATA_FILE = os.path.join(os.getcwd(), "data", "plugins", "astrbot_plugin_ccb_plus", "jilu.json")
+DATA_FILE = os.path.join(os.getcwd(), "data", "plugins", "astrbot_plugin_ccb_plus", "ccb.json")
 
 a1 = "id"
 a2 = "num"
