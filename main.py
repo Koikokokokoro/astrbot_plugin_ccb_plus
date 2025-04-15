@@ -38,6 +38,7 @@ class ccb(Star):
         self_id = event.get_self_id()
         target_user_id = next(
             (str(seg.qq) for seg in messages if (isinstance(seg, Comp.At)) and str(seg.qq) != self_id), send_id)
+        # 随机生成ccb时长和注入量，并确保注入量只有两位小数
         time = round(random.uniform(1, 60), 2)
         V = round(random.uniform(1, 100), 2)
         pic = get_avatar(target_user_id)
@@ -55,12 +56,13 @@ class ccb(Star):
                             stranger_payloads = {"user_id": target_user_id}
                             stranger_info: dict = await client.api.call_action('get_stranger_info', **stranger_payloads)
                             nickname = stranger_info['nick']
-                            item[a2] = item[a2] + 1
-                            item[a3] = item[a3] + V
+                            # 确保累加后的次数为整数，注入量两位小数
+                            item[a2] = int(item.get(a2, 0)) + 1
+                            item[a3] = round(float(item.get(a3, 0)) + V, 2)
                             chain = [
-                                Comp.Plain(f"你和{nickname}发生了{time}min长的ccb行为，向ta注入了{V}ml的生命因子"),
+                                Comp.Plain(f"你和{nickname}发生了{time}min长的ccb行为，向ta注入了{V:.2f}ml的生命因子"),
                                 Comp.Image.fromURL(pic),
-                                Comp.Plain(f"这是ta的第{item[a2]}次。ta被累积注入了{item[a3]}ml的生命因子")
+                                Comp.Plain(f"这是ta的第{item[a2]}次。ta被累积注入了{item[a3]:.2f}ml的生命因子")
                             ]
                             yield event.chain_result(chain)
                             with open(DATA_FILE, 'w') as f:
@@ -79,12 +81,13 @@ class ccb(Star):
                     stranger_info: dict = await client.api.call_action('get_stranger_info', **stranger_payloads)
                     nickname = stranger_info['nick']
                     chain = [
-                        Comp.Plain(f"你和{nickname}发生了{time}min长的ccb行为，向ta注入了{V}ml的生命因子"),
+                        Comp.Plain(f"你和{nickname}发生了{time}min长的ccb行为，向ta注入了{V:.2f}ml的生命因子"),
                         Comp.Image.fromURL(pic),
                         Comp.Plain("这是ta的初体验。")
                     ]
                     yield event.chain_result(chain)
-                    new_record = {"id": target_user_id, "num": 1, "vol": V}
+                    # 确保新记录中注入量为两位小数
+                    new_record = {"id": target_user_id, "num": 1, "vol": round(V, 2)}
                     data.append(new_record)
                     with open(DATA_FILE, 'w') as f:
                         json.dump(data, f)
@@ -125,5 +128,6 @@ class ccb(Star):
                     nickname = stranger_info.get('nick', user_id)
                 except Exception as e:
                     logger.error(f"获取用户昵称失败: {e}")
-            ranking_message += f"{idx}. {nickname} - ccb次数：{record.get(a2, 0)}，累计注入：{record.get(a3, 0)}ml\n"
+            # 使用格式化字符串确保累计注入量只有两位小数显示
+            ranking_message += f"{idx}. {nickname} - ccb次数：{record.get(a2, 0)}，累计注入：{float(record.get(a3, 0)):.2f}ml\n"
         yield event.plain_result(ranking_message)
