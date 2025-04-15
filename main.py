@@ -14,12 +14,6 @@ a2 = "num"
 a3 = "vol"
 
 
-# def parse_at_target(self,event):
-#  for comp in event.message_obj.message:
-#    if isinstance(comp,At):
-#      return str(comp.qq)
-#    return None
-
 def get_avatar(user_id: str) -> bytes:
     avatar_url = f"https://q4.qlogo.cn/headimg_dl?dst_uin={user_id}&spec=640"
     return avatar_url
@@ -28,10 +22,8 @@ def get_avatar(user_id: str) -> bytes:
 def makeit(data, target_user_id):
     for item in data:
         if a1 in item and item[a1] == target_user_id:
-            a = 1
-            return a
-    a = 2
-    return a
+            return 1
+    return 2
 
 
 @register("ccb", "Koikokokokoro", "和群友赛博sex的插件PLUS", "1.1.4")
@@ -46,7 +38,6 @@ class ccb(Star):
         self_id = event.get_self_id()
         target_user_id = next(
             (str(seg.qq) for seg in messages if (isinstance(seg, Comp.At)) and str(seg.qq) != self_id), send_id)
-        # name = parse_at_target()
         time = round(random.uniform(1, 60), 2)
         V = round(random.uniform(1, 100), 2)
         pic = get_avatar(target_user_id)
@@ -58,8 +49,7 @@ class ccb(Star):
                 for item in data:
                     if a1 in item and item[a1] == target_user_id:
                         if event.get_platform_name() == "aiocqhttp":
-                            from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import \
-                                AiocqhttpMessageEvent
+                            from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
                             assert isinstance(event, AiocqhttpMessageEvent)
                             client = event.bot
                             stranger_payloads = {"user_id": target_user_id}
@@ -69,7 +59,7 @@ class ccb(Star):
                             item[a3] = item[a3] + V
                             chain = [
                                 Comp.Plain(f"你和{nickname}发生了{time}min长的ccb行为，向ta注入了{V}ml的生命因子"),
-                                Comp.Image.fromURL(pic),  # 从 URL 发送图片
+                                Comp.Image.fromURL(pic),
                                 Comp.Plain(f"这是ta的第{item[a2]}次。ta被累积注入了{item[a3]}ml的生命因子")
                             ]
                             yield event.chain_result(chain)
@@ -90,55 +80,50 @@ class ccb(Star):
                     nickname = stranger_info['nick']
                     chain = [
                         Comp.Plain(f"你和{nickname}发生了{time}min长的ccb行为，向ta注入了{V}ml的生命因子"),
-                        Comp.Image.fromURL(pic),  # 从 URL 发送图片
+                        Comp.Image.fromURL(pic),
                         Comp.Plain("这是ta的初体验。")
                     ]
                     yield event.chain_result(chain)
-                    dir = {"id": target_user_id, "num": 1, "vol": V}
-                    data.append(dir)
+                    new_record = {"id": target_user_id, "num": 1, "vol": V}
+                    data.append(new_record)
                     with open(DATA_FILE, 'w') as f:
                         json.dump(data, f)
             except Exception as e:
                 logger.error(f"报错: {e}")
                 yield event.plain_result("对方拒绝了和你ccb")
 
-    # 艾草排行榜（为什么需要这个？）
     @filter.command("ccbtop")
     async def ccbtop(self, event: AstrMessageEvent):
+        """
+        排行榜功能：按ccb次数(num)从高到低排序，只展示前五名
+        """
         try:
             with open(DATA_FILE, 'r') as f:
                 data = json.load(f)
-
-            if not data:
-                yield event.chain_result([Comp.Plain("排行榜是空的，大家都还没开始ccb呢~")])
-                return
-
-            # 按照 num（次数）从高到低排序，取前5
-            top_data = sorted(data, key=lambda x: x.get("num", 0), reverse=True)[:5]
-
-            if event.get_platform_name() == "aiocqhttp":
-                from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
-                assert isinstance(event, AiocqhttpMessageEvent)
-                client = event.bot
-
-                msg_text = "📈 CCB排行榜前五名：\n"
-                for idx, item in enumerate(top_data, 1):
-                    user_id = item.get("id", "未知")
-                    num = item.get("num", 0)
-                    vol = item.get("vol", 0)
-
-                    try:
-                        stranger_payloads = {"user_id": user_id}
-                        stranger_info: dict = await client.api.call_action('get_stranger_info', **stranger_payloads)
-                        nickname = stranger_info.get("nick", "未知昵称")
-                    except Exception as e:
-                        logger.warning(f"获取昵称失败：{e}")
-                        nickname = "未知昵称"
-
-                    msg_text += f"{idx}. {nickname}（{user_id}）：{num}次，累计 {vol:.2f}ml\n"
-
-                yield event.chain_result([Comp.Plain(msg_text)])
-
         except Exception as e:
-            logger.error(f"ccbtop 出错: {e}")
-            yield event.chain_result([Comp.Plain("排行榜加载失败了，请稍后再试~")])
+            logger.error(f"读取数据错误: {e}")
+            yield event.plain_result("无法读取排行榜数据，请稍后重试。")
+            return
+
+        # 按 num 从高到低排序
+        sorted_data = sorted(data, key=lambda x: x.get(a2, 0), reverse=True)
+        top5 = sorted_data[:5]
+
+        ranking_message = "ccb排行榜TOP5：\n"
+        # 遍历排行榜记录
+        for idx, record in enumerate(top5, start=1):
+            user_id = record.get(a1)
+            # 默认昵称为用户id，如果平台为 aiocqhttp 则尝试获取昵称
+            nickname = user_id
+            if event.get_platform_name() == "aiocqhttp":
+                try:
+                    from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
+                    assert isinstance(event, AiocqhttpMessageEvent)
+                    client = event.bot
+                    stranger_payloads = {"user_id": user_id}
+                    stranger_info: dict = await client.api.call_action('get_stranger_info', **stranger_payloads)
+                    nickname = stranger_info.get('nick', user_id)
+                except Exception as e:
+                    logger.error(f"获取用户昵称失败: {e}")
+            ranking_message += f"{idx}. {nickname} - ccb次数：{record.get(a2, 0)}，累计注入：{record.get(a3, 0)}ml\n"
+        yield event.plain_result(ranking_message)
