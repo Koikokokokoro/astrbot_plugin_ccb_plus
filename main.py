@@ -102,7 +102,7 @@ class ccb(Star):
                 logger.error(f"报错: {e}")
                 yield event.plain_result("对方拒绝了和你ccb")
 
-    # 排行榜（为什么需要这个？）
+    # 艾草排行榜（为什么需要这个？）
     @filter.command("ccbtop")
     async def ccbtop(self, event: AstrMessageEvent):
         try:
@@ -121,7 +121,7 @@ class ccb(Star):
                 assert isinstance(event, AiocqhttpMessageEvent)
                 client = event.bot
 
-                msg_chain = [Comp.Plain("📈 CCB排行榜前五名：\n")]
+                msg_text = "📈 CCB排行榜前五名：\n"
                 for idx, item in enumerate(top_data, 1):
                     user_id = item.get("id", "未知")
                     num = item.get("num", 0)
@@ -135,9 +135,9 @@ class ccb(Star):
                         logger.warning(f"获取昵称失败：{e}")
                         nickname = "未知昵称"
 
-                    msg_chain.append(Comp.Plain(f"{idx}. {nickname}（{user_id}）：{num}次，累计 {vol:.2f}ml\n"))
+                    msg_text += f"{idx}. {nickname}（{user_id}）：{num}次，累计 {vol:.2f}ml\n"
 
-                yield event.chain_result(msg_chain)
+                yield event.chain_result([Comp.Plain(msg_text)])
 
         except Exception as e:
             logger.error(f"ccbtop 出错: {e}")
