@@ -281,7 +281,7 @@ class ccb(Star):
         # 聚合
         stats = {}  # actor_id -> {"first": x, "actions": y}
         for record in group_data:
-            ccb_by = record.get(a4, {})  # a4 = "ccb_by"
+            ccb_by = record.get(a4, {})
             for actor_id, info in ccb_by.items():
                 st = stats.setdefault(actor_id, {"first": 0, "actions": 0})
                 st["actions"] += info.get("count", 0)
@@ -292,13 +292,13 @@ class ccb(Star):
         ranking = []
         for actor_id, st in stats.items():
             weight = st["first"] * 2 + st["actions"]
-            ranking.append((actor_id, weight))
+            ranking.append((actor_id, st["first"], st["actions"], weight))
         ranking.sort(key=lambda x: x[3], reverse=True)
         top5 = ranking[:5]
 
         # 构造输出
         msg = "🏆 海王榜 TOP5 🏆\n"
-        for idx, (actor_id, weight) in enumerate(top5, 1):
+        for idx, (actor_id, first_cnt, actions_cnt, weight) in enumerate(top5, 1):
             nick = actor_id
             if event.get_platform_name() == "aiocqhttp":
                 try:
@@ -309,14 +309,17 @@ class ccb(Star):
                 except:
                     pass
             msg += (
-                f"({idx}. {nick} - 海王值：{weight}) \n"
+                f"{idx}. {nick} - 海王值：{weight}\n"
                 # f"(首位：{first_cnt}次，ccb：{actions_cnt}次)\n"
             )
         yield event.plain_result(msg)
 
     @filter.command("xnn")
     async def xnn(self, event: AstrMessageEvent):
-        # XNN榜
+        """
+        XNN榜
+        计算群中最xnn特质的群友
+        """
         # 配置权重
         w_num = 1.0
         w_vol = 0.1
