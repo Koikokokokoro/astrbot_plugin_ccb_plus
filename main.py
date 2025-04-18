@@ -292,7 +292,7 @@ class ccb(Star):
         ranking = []
         for actor_id, st in stats.items():
             weight = st["first"] * 2 + st["actions"]
-            ranking.append((actor_id, st["first"], st["actions"], weight))
+            ranking.append((actor_id, weight))
         ranking.sort(key=lambda x: x[3], reverse=True)
         top5 = ranking[:5]
 
@@ -344,15 +344,15 @@ class ccb(Star):
             vol = float(record.get(a3, 0))
             actions = actor_actions.get(uid, 0)
             xnn_value = num * w_num + vol * w_vol - actions * w_action
-            ranking.append((uid, num, vol, actions, xnn_value))
+            ranking.append((uid, xnn_value))
 
         # 排序
-        ranking.sort(key=lambda x: x[4], reverse=True)
+        ranking.sort(key=lambda x: x[1], reverse=True)
         top5 = ranking[:5]
 
         # 构造输出
         msg = "💎 XNN 榜 TOP5 💎\n"
-        for idx, (uid, xnn_val) in enumerate(top5, 1):
+        for idx, (uid, xnn_val) in enumerate(ranking[:5], 1):
             nick = uid
             if event.get_platform_name() == "aiocqhttp":
                 try:
