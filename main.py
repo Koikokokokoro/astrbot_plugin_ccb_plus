@@ -34,6 +34,7 @@ class ccb(Star):
         self.BAN_DURATION = 15 * 60      # 禁用时长（秒）
         self.action_times = {}           # actor_id -> deque of timestamps
         self.ban_list = {}               # actor_id -> ban_end_timestamp
+        self.YW_PROB = 0.05               # 触发概率
 
     def read_data(self):
         try:
@@ -53,10 +54,12 @@ class ccb(Star):
 
     @filter.command("ccb")
     async def ccb(self, event: AstrMessageEvent):
+        import time, random
+
         group_id = str(event.get_group_id())
         send_id = str(event.get_sender_id())
         self_id = str(event.get_self_id())
-        actor_id = str(event.get_sender_id())
+        actor_id = send_id
         now = time.time()
 
         # 1. 检查是否在禁用期内
@@ -69,7 +72,6 @@ class ccb(Star):
 
         # 2. 滑动窗口统计
         times = self.action_times.setdefault(actor_id, deque())
-        # 丢弃超出窗口的数据
         while times and now - times[0] > self.WINDOW:
             times.popleft()
         times.append(now)
@@ -88,12 +90,11 @@ class ccb(Star):
             send_id
         )
 
-        # 生成数据
+        # 4. 真正的 CCB 业务逻辑
         duration = round(random.uniform(1, 60), 2)
         V = round(random.uniform(1, 100), 2)
         pic = get_avatar(target_user_id)
 
-        # 读写群组数据
         all_data = self.read_data()
         group_data = all_data.get(group_id, [])
 
@@ -103,46 +104,49 @@ class ccb(Star):
             try:
                 for item in group_data:
                     if item.get(a1) == target_user_id:
-                        # aiocqhttp 获取昵称
+                        # 获取昵称
                         nickname = target_user_id
                         if event.get_platform_name() == "aiocqhttp":
-                            from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
+                            from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import \
+                                AiocqhttpMessageEvent
                             assert isinstance(event, AiocqhttpMessageEvent)
                             stranger_info = await event.bot.api.call_action(
                                 'get_stranger_info', user_id=target_user_id
                             )
                             nickname = stranger_info.get("nick", nickname)
 
-                        # 更新 num / vol
+                        # 更新 num / vol / ccb_by
                         item[a2] = int(item.get(a2, 0)) + 1
                         item[a3] = round(float(item.get(a3, 0)) + V, 2)
-
-                        # 更新 ccb_by 嵌套结构
                         ccb_by = item.get(a4, {})
                         if send_id in ccb_by:
                             ccb_by[send_id]["count"] += 1
                         else:
-                            # 第一次被这个 actor_id 操作，first=False
                             ccb_by[send_id] = {"count": 1, "first": False}
                         item[a4] = ccb_by
 
-                        # 回复消息
+                        # 先发送业务结果
                         chain = [
-                            Comp.Plain(
-                                f"你和{nickname}发生了{duration}min长的ccb行为，向ta注入了{V:.2f}ml的生命因子"
-                            ),
+                            Comp.Plain(f"你和{nickname}发生了{duration}min长的ccb行为，向ta注入了{V:.2f}ml的生命因子"),
                             Comp.Image.fromURL(pic),
                             Comp.Plain(f"这是ta的第{item[a2]}次。")
                         ]
                         yield event.chain_result(chain)
 
-                        # 写回文件
+                        # 写回数据
                         all_data[group_id] = group_data
                         self.write_data(all_data)
-                        break
+
+                        # 随机 YW 检测
+                        if random.random() < self.YW_PROB:
+                            self.ban_list[actor_id] = now + self.BAN_DURATION
+                            yield event.plain_result("💥你的牛牛炸膛了！满身疮痍，再起不能（悲）")
+
+                        return
             except Exception as e:
                 logger.error(f"报错: {e}")
                 yield event.plain_result("对方拒绝了和你ccb")
+                return
 
         else:
             # 新记录
@@ -157,29 +161,33 @@ class ccb(Star):
                     nickname = stranger_info.get("nick", nickname)
 
                 chain = [
-                    Comp.Plain(
-                        f"你和{nickname}发生了{duration}min长的ccb行为，向ta注入了{V:.2f}ml的生命因子"
-                    ),
+                    Comp.Plain(f"你和{nickname}发生了{duration}min长的ccb行为，向ta注入了{V:.2f}ml的生命因子"),
                     Comp.Image.fromURL(pic),
                     Comp.Plain("这是ta的初体验。")
                 ]
                 yield event.chain_result(chain)
 
-                # 构造新记录，并在 ccb_by 中给第一个 actor 标记 first=True
+                # 构造并保存新记录
                 new_record = {
                     a1: target_user_id,
                     a2: 1,
                     a3: round(V, 2),
-                    a4: {
-                        send_id: {"count": 1, "first": True}
-                    }
+                    a4: {send_id: {"count": 1, "first": True}}
                 }
                 group_data.append(new_record)
                 all_data[group_id] = group_data
                 self.write_data(all_data)
+
+                # 随机 YW 检测
+                if random.random() < self.YW_PROB:
+                    self.ban_list[actor_id] = now + self.BAN_DURATION
+                    yield event.plain_result("💥 运气不好，ccb 完成后触发随机禁令，你已被禁止ccb15分钟！")
+
+                return
             except Exception as e:
                 logger.error(f"报错: {e}")
                 yield event.plain_result("对方拒绝了和你ccb")
+                return
 
     @filter.command("ccbtop")
     async def ccbtop(self, event: AstrMessageEvent):
