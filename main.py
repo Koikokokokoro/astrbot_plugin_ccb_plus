@@ -309,7 +309,7 @@ class ccb(Star):
                 except:
                     pass
             msg += (
-                f"{idx}. {nick} - 海王值：{weight} "
+                f"{idx}. {nick} - 海王值：{weight}\n "
                 # f"(首位：{first_cnt}次，ccb：{actions_cnt}次)\n"
             )
 
