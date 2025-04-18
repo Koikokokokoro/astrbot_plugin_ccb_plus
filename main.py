@@ -298,7 +298,7 @@ class ccb(Star):
 
         # 构造输出
         msg = "🏆 海王榜 TOP5 🏆\n"
-        for idx, (actor_id, first_cnt, actions_cnt, weight) in enumerate(top5, 1):
+        for idx, (actor_id, weight) in enumerate(top5, 1):
             nick = actor_id
             if event.get_platform_name() == "aiocqhttp":
                 try:
@@ -316,7 +316,6 @@ class ccb(Star):
 
     @filter.command("xnn")
     async def xnn(self, event: AstrMessageEvent):
-
         # XNN榜
         # 配置权重
         w_num = 1.0
@@ -353,7 +352,7 @@ class ccb(Star):
 
         # 构造输出
         msg = "💎 XNN 榜 TOP5 💎\n"
-        for idx, (uid, num, vol, actions, xnn_val) in enumerate(top5, 1):
+        for idx, (uid, xnn_val) in enumerate(top5, 1):
             nick = uid
             if event.get_platform_name() == "aiocqhttp":
                 try:
