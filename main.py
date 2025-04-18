@@ -268,7 +268,7 @@ class ccb(Star):
     @filter.command("haiwang")
     async def haiwang(self, event: AstrMessageEvent):
         """
-        海王榜：按海王值从大到小排序，只展示前五名
+        海王榜
         权重 weight = first_count * 2 + total_ccb_count
         """
         group_id = str(event.get_group_id())
@@ -278,7 +278,7 @@ class ccb(Star):
             yield event.plain_result("当前群暂无ccb记录。")
             return
 
-        # 聚合每个 actor 的 first_count 和 actions
+        # 聚合
         stats = {}  # actor_id -> {"first": x, "actions": y}
         for record in group_data:
             ccb_by = record.get(a4, {})  # a4 = "ccb_by"
@@ -309,8 +309,63 @@ class ccb(Star):
                 except:
                     pass
             msg += (
-                f"{idx}. {nick} - 海王值：{weight}\n "
+                f"({idx}. {nick} - 海王值：{weight}) \n"
                 # f"(首位：{first_cnt}次，ccb：{actions_cnt}次)\n"
+            )
+        yield event.plain_result(msg)
+
+    @filter.command("xnn")
+    async def xnn(self, event: AstrMessageEvent):
+
+        # XNN榜
+        # 配置权重
+        w_num = 1.0
+        w_vol = 0.1
+        w_action = 0.5
+
+        group_id = str(event.get_group_id())
+        all_data = self.read_data()
+        group_data = all_data.get(group_id, [])
+        if not group_data:
+            yield event.plain_result("当前群暂无ccb记录。")
+            return
+
+        # 统计每个人对别人的操作次数
+        actor_actions = {}
+        for record in group_data:
+            ccb_by = record.get(a4, {})
+            for actor_id, info in ccb_by.items():
+                actor_actions[actor_id] = actor_actions.get(actor_id, 0) + info.get("count", 0)
+
+        # 计算xnn值
+        ranking = []
+        for record in group_data:
+            uid = record.get(a1)
+            num = int(record.get(a2, 0))
+            vol = float(record.get(a3, 0))
+            actions = actor_actions.get(uid, 0)
+            xnn_value = num * w_num + vol * w_vol - actions * w_action
+            ranking.append((uid, num, vol, actions, xnn_value))
+
+        # 排序
+        ranking.sort(key=lambda x: x[4], reverse=True)
+        top5 = ranking[:5]
+
+        # 构造输出
+        msg = "💎 XNN 榜 TOP5 💎\n"
+        for idx, (uid, num, vol, actions, xnn_val) in enumerate(top5, 1):
+            nick = uid
+            if event.get_platform_name() == "aiocqhttp":
+                try:
+                    from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
+                    assert isinstance(event, AiocqhttpMessageEvent)
+                    info = await event.bot.api.call_action("get_stranger_info", user_id=uid)
+                    nick = info.get("nick", nick)
+                except:
+                    pass
+            msg += (
+                f"({idx}. {nick} - XNN值：{xnn_val:.2f} )\n "
+                # f"(被ccb次数：{num}，容量：{vol:.2f}ml，对他人ccb：{actions})\n"
             )
 
         yield event.plain_result(msg)

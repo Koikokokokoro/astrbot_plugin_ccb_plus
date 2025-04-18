@@ -11,6 +11,10 @@
 ☑ ccbtop 艾草排行榜<br>
 ☑ ccbvol 失荆州排行榜<br>
 ☑ ccbinfo 查询ccb信息
+☑ haiwang 海王榜
+☑ xnn xnn榜
 
 # ...<br>
 NULL
+
+# 绝赞更新中⭐
