@@ -366,7 +366,7 @@ class ccb(Star):
                 except:
                     pass
             msg += (
-                f"({idx}. {nick} - XNN值：{xnn_val:.2f} )\n "
+                f"{idx}. {nick} - XNN值：{xnn_val:.2f} \n "
                 # f"(被ccb次数：{num}，容量：{vol:.2f}ml，对他人ccb：{actions})\n"
             )
 
