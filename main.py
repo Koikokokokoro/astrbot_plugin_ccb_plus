@@ -3,6 +3,8 @@ from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
 import astrbot.api.message_components as Comp
+from collections import deque
+import time
 import json
 import random
 import os
@@ -27,6 +29,11 @@ def makeit(group_data, target_user_id):
 class ccb(Star):
     def __init__(self, context: Context):
         super().__init__(context)
+        self.WINDOW = 60                 # 滑动窗口长度（秒）
+        self.THRESHOLD = 5               # 窗口内最大允许动作次数
+        self.BAN_DURATION = 15 * 60      # 禁用时长（秒）
+        self.action_times = {}           # actor_id -> deque of timestamps
+        self.ban_list = {}               # actor_id -> ban_end_timestamp
 
     def read_data(self):
         try:
@@ -49,6 +56,30 @@ class ccb(Star):
         group_id = str(event.get_group_id())
         send_id = str(event.get_sender_id())
         self_id = str(event.get_self_id())
+        actor_id = str(event.get_sender_id())
+        now = time.time()
+
+        # 1. 检查是否在禁用期内
+        ban_end = self.ban_list.get(actor_id, 0)
+        if now < ban_end:
+            remain = int(ban_end - now)
+            m, s = divmod(remain, 60)
+            yield event.plain_result(f"嘻嘻，你已经一滴不剩了，养胃还剩 {m}分{s}秒")
+            return
+
+        # 2. 滑动窗口统计
+        times = self.action_times.setdefault(actor_id, deque())
+        # 丢弃超出窗口的数据
+        while times and now - times[0] > self.WINDOW:
+            times.popleft()
+        times.append(now)
+
+        # 3. 超阈值则禁 15 分钟
+        if len(times) > self.THRESHOLD:
+            self.ban_list[actor_id] = now + self.BAN_DURATION
+            times.clear()
+            yield event.plain_result("冲得出来吗你就冲，再冲就给你折了")
+            return
 
         # 找到 @ 的目标，否则默认自己
         target_user_id = next(
@@ -269,7 +300,7 @@ class ccb(Star):
     async def haiwang(self, event: AstrMessageEvent):
         """
         海王榜
-        权重 weight = first_count * 2 + total_ccb_count
+        计算群中最后宫特质的群友
         """
         group_id = str(event.get_group_id())
         all_data = self.read_data()
@@ -366,7 +397,7 @@ class ccb(Star):
                 except:
                     pass
             msg += (
-                f"{idx}. {nick} - XNN值：{xnn_val:.2f} \n "
+                f"{idx}. {nick} - XNN值：{xnn_val:.2f} \n"
                 # f"(被ccb次数：{num}，容量：{vol:.2f}ml，对他人ccb：{actions})\n"
             )
 
