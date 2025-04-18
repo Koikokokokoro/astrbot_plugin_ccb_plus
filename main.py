@@ -265,3 +265,52 @@ class ccb(Star):
         )
         yield event.plain_result(msg)
 
+    @filter.command("haiwang")
+    async def haiwang(self, event: AstrMessageEvent):
+        """
+        海王榜：按海王值从大到小排序，只展示前五名
+        权重 weight = first_count * 2 + total_ccb_count
+        """
+        group_id = str(event.get_group_id())
+        all_data = self.read_data()
+        group_data = all_data.get(group_id, [])
+        if not group_data:
+            yield event.plain_result("当前群暂无ccb记录。")
+            return
+
+        # 聚合每个 actor 的 first_count 和 actions
+        stats = {}  # actor_id -> {"first": x, "actions": y}
+        for record in group_data:
+            ccb_by = record.get(a4, {})  # a4 = "ccb_by"
+            for actor_id, info in ccb_by.items():
+                st = stats.setdefault(actor_id, {"first": 0, "actions": 0})
+                st["actions"] += info.get("count", 0)
+                if info.get("first"):
+                    st["first"] += 1
+
+        # 计算权重并排序
+        ranking = []
+        for actor_id, st in stats.items():
+            weight = st["first"] * 2 + st["actions"]
+            ranking.append((actor_id, st["first"], st["actions"], weight))
+        ranking.sort(key=lambda x: x[3], reverse=True)
+        top5 = ranking[:5]
+
+        # 构造输出
+        msg = "🏆 海王榜 TOP5 🏆\n"
+        for idx, (actor_id, first_cnt, actions_cnt, weight) in enumerate(top5, 1):
+            nick = actor_id
+            if event.get_platform_name() == "aiocqhttp":
+                try:
+                    from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
+                    assert isinstance(event, AiocqhttpMessageEvent)
+                    info = await event.bot.api.call_action("get_stranger_info", user_id=actor_id)
+                    nick = info.get("nick", nick)
+                except:
+                    pass
+            msg += (
+                f"{idx}. {nick} - 海王值：{weight} "
+                # f"(首位：{first_cnt}次，ccb：{actions_cnt}次)\n"
+            )
+
+        yield event.plain_result(msg)
