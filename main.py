@@ -89,7 +89,7 @@ class ccb(Star):
         )
 
         # 生成数据
-        time = round(random.uniform(1, 60), 2)
+        duration = round(random.uniform(1, 60), 2)
         V = round(random.uniform(1, 100), 2)
         pic = get_avatar(target_user_id)
 
@@ -129,7 +129,7 @@ class ccb(Star):
                         # 回复消息
                         chain = [
                             Comp.Plain(
-                                f"你和{nickname}发生了{time}min长的ccb行为，向ta注入了{V:.2f}ml的生命因子"
+                                f"你和{nickname}发生了{duration}min长的ccb行为，向ta注入了{V:.2f}ml的生命因子"
                             ),
                             Comp.Image.fromURL(pic),
                             Comp.Plain(f"这是ta的第{item[a2]}次。")
@@ -158,7 +158,7 @@ class ccb(Star):
 
                 chain = [
                     Comp.Plain(
-                        f"你和{nickname}发生了{time}min长的ccb行为，向ta注入了{V:.2f}ml的生命因子"
+                        f"你和{nickname}发生了{duration}min长的ccb行为，向ta注入了{V:.2f}ml的生命因子"
                     ),
                     Comp.Image.fromURL(pic),
                     Comp.Plain("这是ta的初体验。")
