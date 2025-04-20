@@ -137,7 +137,7 @@ class ccb(Star):
                         all_data[group_id] = group_data
                         self.write_data(all_data)
 
-                        # 随机 YW 检测
+                        # 随机 YW
                         if random.random() < self.YW_PROB:
                             self.ban_list[actor_id] = now + self.BAN_DURATION
                             yield event.plain_result("💥你的牛牛炸膛了！满身疮痍，再起不能（悲）")
@@ -178,10 +178,10 @@ class ccb(Star):
                 all_data[group_id] = group_data
                 self.write_data(all_data)
 
-                # 随机 YW 检测
+                # 随机 YW
                 if random.random() < self.YW_PROB:
                     self.ban_list[actor_id] = now + self.BAN_DURATION
-                    yield event.plain_result("💥 运气不好，ccb 完成后触发随机禁令，你已被禁止ccb15分钟！")
+                    yield event.plain_result("💥你的牛牛炸膛了！满身疮痍，再起不能（悲）")
 
                 return
             except Exception as e:
@@ -192,7 +192,7 @@ class ccb(Star):
     @filter.command("ccbtop")
     async def ccbtop(self, event: AstrMessageEvent):
         """
-        按次数排行（不显示 vol / ccb_by）
+        按次数排行
         """
         group_id = str(event.get_group_id())
         group_data = self.read_data().get(group_id, [])
@@ -218,7 +218,7 @@ class ccb(Star):
     @filter.command("ccbvol")
     async def ccbvol(self, event: AstrMessageEvent):
         """
-        按注入量排行（不显示 num / ccb_by）
+        按注入量排行
         """
         group_id = str(event.get_group_id())
         group_data = self.read_data().get(group_id, [])
