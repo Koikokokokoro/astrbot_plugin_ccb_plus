@@ -4,7 +4,7 @@ from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
 import astrbot.api.message_components as Comp
 from collections import deque
-from astrbot.api import AstrBotConfig
+# from astrbot.api import AstrBotConfig
 
 import time
 import json
@@ -29,9 +29,9 @@ def makeit(group_data, target_user_id):
 
 @register("ccb", "Koikokokokoro", "和群友赛博sex的插件PLUS", "1.1.4")
 class ccb(Star):
-    def __init__(self, context: Context, config: AstrBotConfig):
+    def __init__(self, context: Context):
         super().__init__(context)
-        self.config = config
+        # self.config = config
         self.WINDOW = 60                 # 滑动窗口长度（秒）
         self.THRESHOLD = 5               # 窗口内最大允许动作次数
         self.BAN_DURATION = 900      # 禁用时长（秒）
