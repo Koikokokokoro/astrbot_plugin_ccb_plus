@@ -4,7 +4,7 @@ from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
 import astrbot.api.message_components as Comp
 from collections import deque
-# from astrbot.api import AstrBotConfig
+from astrbot.api import AstrBotConfig
 
 import time
 import json
@@ -29,19 +29,12 @@ def makeit(group_data, target_user_id):
 
 @register("ccb", "Koikokokokoro", "和群友赛博sex的插件PLUS", "1.1.4")
 class ccb(Star):
-    def __init__(self, context: Context):
+    def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
-<<<<<<< Updated upstream
-        # self.config = config
-        self.WINDOW = 60                 # 滑动窗口长度（秒）
-        self.THRESHOLD = 5               # 窗口内最大允许动作次数
-        self.BAN_DURATION = 900      # 禁用时长（秒）
-=======
         self.config = config
         self.WINDOW = config.get("yw_window")                 # 滑动窗口长度（秒）
         self.THRESHOLD = config.get("yw_threshold")               # 窗口内最大允许动作次数
         self.BAN_DURATION = config.get("yw_ban_duration")      # 禁用时长（秒）
->>>>>>> Stashed changes
         self.action_times = {}
         self.ban_list = {}
         self.YW_PROB = config.get("yw_probability")               # 触发概率
