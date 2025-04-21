@@ -1,0 +1,38 @@
+{
+  "yw_window": {
+    "description": "触发赛博阳痿的窗口时间（秒）",
+    "type": "int",
+    "default": 60,
+    "hint": "统计多少秒内的调用次数。"
+  },
+  "yw_threshold": {
+    "description": "窗口时间内最大ccb数",
+    "type": "int",
+    "default": 5,
+    "hint": "同一人多少次请求后会被禁用。"
+  },
+  "yw_ban_duration": {
+    "description": "养胃时长（秒）",
+    "type": "int",
+    "default": 900,
+    "hint": "被触发限流后禁用多长时间。"
+  },
+  "yw_probability": {
+    "description": "随机养胃概率",
+    "type": "float",
+    "default": 0.1,
+    "hint": "每次 CCB 完成后，有多大概率养胃。"
+  },
+  "white_list": {
+    "description": "不能进行ccb的id列表",
+    "type": "list",
+    "default": [],
+    "hint": "当目标在此列表中时，不能对其ccb。"
+  },
+  "self_ccb": {
+    "description": "是否运行0721",
+    "type": "bool",
+    "default": false,
+    "hint": "为true时当ccb指令未指定对象时进行0721。"
+  }
+}

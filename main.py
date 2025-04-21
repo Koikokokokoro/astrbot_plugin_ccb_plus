@@ -4,6 +4,8 @@ from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
 import astrbot.api.message_components as Comp
 from collections import deque
+from astrbot.api import AstrBotConfig
+
 import time
 import json
 import random
@@ -14,10 +16,10 @@ DATA_FILE = os.path.join(
     "data", "plugins", "astrbot_plugin_ccb_plus", "ccb.json"
 )
 
-a1 = "id"
-a2 = "num"
-a3 = "vol"
-a4 = "ccb_by"  # 新增字段
+a1 = "id"       # qq号
+a2 = "num"      # 北朝次数
+a3 = "vol"      # 被注入量
+a4 = "ccb_by"   # 被谁朝了
 
 def get_avatar(user_id: str) -> bytes:
     return f"https://q4.qlogo.cn/headimg_dl?dst_uin={user_id}&spec=640"
@@ -27,14 +29,17 @@ def makeit(group_data, target_user_id):
 
 @register("ccb", "Koikokokokoro", "和群友赛博sex的插件PLUS", "1.1.4")
 class ccb(Star):
-    def __init__(self, context: Context):
+    def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
+        self.config = config
         self.WINDOW = 60                 # 滑动窗口长度（秒）
         self.THRESHOLD = 5               # 窗口内最大允许动作次数
-        self.BAN_DURATION = 15 * 60      # 禁用时长（秒）
-        self.action_times = {}           # actor_id -> deque of timestamps
-        self.ban_list = {}               # actor_id -> ban_end_timestamp
+        self.BAN_DURATION = 900      # 禁用时长（秒）
+        self.action_times = {}
+        self.ban_list = {}
         self.YW_PROB = 0.05               # 触发概率
+        self.white_list  = {}
+        self.selfdo = False         # 0721 默认为否
 
     def read_data(self):
         try:
@@ -54,6 +59,10 @@ class ccb(Star):
 
     @filter.command("ccb")
     async def ccb(self, event: AstrMessageEvent):
+        """
+        ccb，顾名思义，用来ccb
+        用法： ccb [@]
+        """
         import time, random
 
         group_id = str(event.get_group_id())
@@ -62,7 +71,7 @@ class ccb(Star):
         actor_id = send_id
         now = time.time()
 
-        # 1. 检查是否在禁用期内
+        # 检查是否在禁用期内
         ban_end = self.ban_list.get(actor_id, 0)
         if now < ban_end:
             remain = int(ban_end - now)
@@ -70,13 +79,13 @@ class ccb(Star):
             yield event.plain_result(f"嘻嘻，你已经一滴不剩了，养胃还剩 {m}分{s}秒")
             return
 
-        # 2. 滑动窗口统计
+        # 窗口时间统计
         times = self.action_times.setdefault(actor_id, deque())
         while times and now - times[0] > self.WINDOW:
             times.popleft()
         times.append(now)
 
-        # 3. 超阈值则禁 15 分钟
+        # 超阈值禁用
         if len(times) > self.THRESHOLD:
             self.ban_list[actor_id] = now + self.BAN_DURATION
             times.clear()
@@ -90,7 +99,19 @@ class ccb(Star):
             send_id
         )
 
-        # 4. 真正的 CCB 业务逻辑
+        if target_user_id in self.white_list:
+            stranger_info = await event.bot.api.call_action(
+                'get_stranger_info', user_id=target_user_id
+            )
+            nickname = stranger_info.get("nick", target_user_id)
+            yield event.plain_result(f"{nickname} 的后门被后户之神霸占了，不能ccb（悲")
+            return
+
+        if target_user_id == actor_id and not self.SELFDO:
+            yield event.plain_result("兄啊金箔怎么还能捅到自己的啊（恼）")
+            return
+
+        # CCB 逻辑
         duration = round(random.uniform(1, 60), 2)
         V = round(random.uniform(1, 100), 2)
         pic = get_avatar(target_user_id)
@@ -125,7 +146,7 @@ class ccb(Star):
                             ccb_by[send_id] = {"count": 1, "first": False}
                         item[a4] = ccb_by
 
-                        # 先发送业务结果
+                        # 发送结果
                         chain = [
                             Comp.Plain(f"你和{nickname}发生了{duration}min长的ccb行为，向ta注入了{V:.2f}ml的生命因子"),
                             Comp.Image.fromURL(pic),
@@ -137,7 +158,7 @@ class ccb(Star):
                         all_data[group_id] = group_data
                         self.write_data(all_data)
 
-                        # 随机 YW
+                        # 随机养胃
                         if random.random() < self.YW_PROB:
                             self.ban_list[actor_id] = now + self.BAN_DURATION
                             yield event.plain_result("💥你的牛牛炸膛了！满身疮痍，再起不能（悲）")
@@ -178,7 +199,7 @@ class ccb(Star):
                 all_data[group_id] = group_data
                 self.write_data(all_data)
 
-                # 随机 YW
+                # 随机养胃
                 if random.random() < self.YW_PROB:
                     self.ban_list[actor_id] = now + self.BAN_DURATION
                     yield event.plain_result("💥你的牛牛炸膛了！满身疮痍，再起不能（悲）")
