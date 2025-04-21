@@ -107,7 +107,7 @@ class ccb(Star):
             yield event.plain_result(f"{nickname} 的后门被后户之神霸占了，不能ccb（悲")
             return
 
-        if target_user_id == actor_id and not self.SELFDO:
+        if target_user_id == actor_id and not self.selfdo:
             yield event.plain_result("兄啊金箔怎么还能捅到自己的啊（恼）")
             return
 
