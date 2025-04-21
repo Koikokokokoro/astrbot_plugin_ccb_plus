@@ -15,10 +15,10 @@
 ☑ haiwang 海王榜<br>
 ☑ xnn xnn榜<br>
 
-todo：<br>
+☑ 添加Astrbot配置文件，可以在插件管理中修改部分参数<br>
+☑ 添加白名单，白名单内id脱离七情六欲，不能被ccb<br>
 
- 添加Astrbot配置文件，可以在插件管理中修改部分参数<br>
- 添加白名单，白名单内id脱离七情六欲，不能被ccb<br>
+todo：<br>
 
 # ...<br>
 NULL <br>
