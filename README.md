@@ -17,6 +17,7 @@
 
 ☑ 添加Astrbot配置文件，可以在插件管理中修改部分参数<br>
 ☑ 添加白名单，白名单内id脱离七情六欲，不能被ccb<br>
+☑ ccb.json长期化，现在位置为astrbot/data
 
 todo：<br>
 

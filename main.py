@@ -11,10 +11,12 @@ import json
 import random
 import os
 
-DATA_FILE = os.path.join(
-    os.getcwd(),
-    "data", "plugins", "astrbot_plugin_ccb_plus", "ccb.json"
-)
+# DATA_FILE = os.path.join(
+#     os.getcwd(),
+#     "data", "plugins", "astrbot_plugin_ccb_plus", "ccb.json"
+# )
+
+DATA_FILE = "data/ccb.json"
 
 a1 = "id"       # qq号
 a2 = "num"      # 北朝次数
@@ -32,12 +34,12 @@ class ccb(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
         self.config = config
-        self.WINDOW = config.get("yw_window")                 # 滑动窗口长度（秒）
-        self.THRESHOLD = config.get("yw_threshold")               # 窗口内最大允许动作次数
-        self.BAN_DURATION = config.get("yw_ban_duration")      # 禁用时长（秒）
+        self.window = config.get("yw_window")                 # 滑动窗口长度（秒）
+        self.threshold = config.get("yw_threshold")               # 窗口内最大允许动作次数
+        self.ban_duration = config.get("yw_ban_duration")      # 禁用时长（秒）
         self.action_times = {}
         self.ban_list = {}
-        self.YW_PROB = config.get("yw_probability")               # 触发概率
+        self.yw_prob = config.get("yw_probability")               # 触发概率
         self.white_list  = config.get("white_list")
         self.selfdo = self.config.get("self_ccb", False)         # 0721 默认为否
 
@@ -81,13 +83,13 @@ class ccb(Star):
 
         # 窗口时间统计
         times = self.action_times.setdefault(actor_id, deque())
-        while times and now - times[0] > self.WINDOW:
+        while times and now - times[0] > self.window:
             times.popleft()
         times.append(now)
 
         # 超阈值禁用
-        if len(times) > self.THRESHOLD:
-            self.ban_list[actor_id] = now + self.BAN_DURATION
+        if len(times) > self.threshold:
+            self.ban_list[actor_id] = now + self.ban_duration
             times.clear()
             yield event.plain_result("冲得出来吗你就冲，再冲就给你折了")
             return
@@ -159,8 +161,8 @@ class ccb(Star):
                         self.write_data(all_data)
 
                         # 随机养胃
-                        if random.random() < self.YW_PROB:
-                            self.ban_list[actor_id] = now + self.BAN_DURATION
+                        if random.random() < self.yw_prob:
+                            self.ban_list[actor_id] = now + self.ban_duration
                             yield event.plain_result("💥你的牛牛炸膛了！满身疮痍，再起不能（悲）")
 
                         return
@@ -200,8 +202,8 @@ class ccb(Star):
                 self.write_data(all_data)
 
                 # 随机养胃
-                if random.random() < self.YW_PROB:
-                    self.ban_list[actor_id] = now + self.BAN_DURATION
+                if random.random() < self.yw_prob:
+                    self.ban_list[actor_id] = now + self.ban_duration
                     yield event.plain_result("💥你的牛牛炸膛了！满身疮痍，再起不能（悲）")
 
                 return

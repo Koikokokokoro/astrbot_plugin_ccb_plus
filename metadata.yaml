@@ -1,5 +1,5 @@
 name: astrbot_plugin_ccb_plus # 这是你的插件的唯一识别名。
 desc: CCB增强版，查看仓库以了解新增内容。 # 插件简短描述
-version: v0.0.8 # 插件版本号。格式：v1.1.4 或 v5.1.4
+version: v0.0.9 # 插件版本号。格式：v1.1.4 或 v5.1.4
 author: Koikokokokoro # 作者
 repo: https://github.com/Koikokokokoro/astrbot_plugin_ccb_plus # 插件的仓库地址
