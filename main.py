@@ -31,15 +31,22 @@ def makeit(group_data, target_user_id):
 class ccb(Star):
     def __init__(self, context: Context):
         super().__init__(context)
+<<<<<<< Updated upstream
         # self.config = config
         self.WINDOW = 60                 # 滑动窗口长度（秒）
         self.THRESHOLD = 5               # 窗口内最大允许动作次数
         self.BAN_DURATION = 900      # 禁用时长（秒）
+=======
+        self.config = config
+        self.WINDOW = config.get("yw_window")                 # 滑动窗口长度（秒）
+        self.THRESHOLD = config.get("yw_threshold")               # 窗口内最大允许动作次数
+        self.BAN_DURATION = config.get("yw_ban_duration")      # 禁用时长（秒）
+>>>>>>> Stashed changes
         self.action_times = {}
         self.ban_list = {}
-        self.YW_PROB = 0.05               # 触发概率
-        self.white_list  = {}
-        self.selfdo = False         # 0721 默认为否
+        self.YW_PROB = config.get("yw_probability")               # 触发概率
+        self.white_list  = config.get("white_list")
+        self.selfdo = self.config.get("self_ccb", False)         # 0721 默认为否
 
     def read_data(self):
         try:

@@ -30,7 +30,7 @@
     "hint": "当目标在此列表中时，不能对其ccb。"
   },
   "self_ccb": {
-    "description": "是否运行0721",
+    "description": "是否允许0721",
     "type": "bool",
     "default": false,
     "hint": "为true时当ccb指令未指定对象时进行0721。"
