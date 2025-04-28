@@ -34,5 +34,11 @@
     "type": "bool",
     "default": false,
     "hint": "为true时当ccb指令未指定对象时进行0721。"
+  },
+  "crit_prob": {
+    "description": "暴击概率",
+    "type": "float",
+    "default": 0.2,
+    "hint": "ccb时暴击的概率。"
   }
 }

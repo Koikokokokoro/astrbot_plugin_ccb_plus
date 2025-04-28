@@ -42,6 +42,7 @@ class ccb(Star):
         self.yw_prob = config.get("yw_probability")               # 触发概率
         self.white_list  = config.get("white_list")
         self.selfdo = self.config.get("self_ccb", False)         # 0721 默认为否
+        self.crit_prob  =   self.config.get("crit_prob")
 
     def read_data(self):
         try:
@@ -116,6 +117,11 @@ class ccb(Star):
         # CCB 逻辑
         duration = round(random.uniform(1, 60), 2)
         V = round(random.uniform(1, 100), 2)
+        prob = self.crit_prob
+        crit = False
+        if random.random() < prob:
+            V = round(V * 2, 2)
+            crit = True
         pic = get_avatar(target_user_id)
 
         all_data = self.read_data()
@@ -148,12 +154,19 @@ class ccb(Star):
                             ccb_by[send_id] = {"count": 1, "first": False}
                         item[a4] = ccb_by
 
-                        # 发送结果
-                        chain = [
-                            Comp.Plain(f"你和{nickname}发生了{duration}min长的ccb行为，向ta注入了{V:.2f}ml的生命因子"),
-                            Comp.Image.fromURL(pic),
-                            Comp.Plain(f"这是ta的第{item[a2]}次。")
-                        ]
+                        if crit:
+                            chain = [
+                                Comp.Plain(f"你和{nickname}发生了{duration}min长的ccb行为，向ta注入了 💥 暴击！{V:.2f}ml的生命因子"),
+                                Comp.Image.fromURL(pic),
+                                Comp.Plain(f"这是ta的第{item[a2]}次。")
+                            ]
+                        else:
+                            # 发送结果
+                            chain = [
+                                Comp.Plain(f"你和{nickname}发生了{duration}min长的ccb行为，向ta注入了{V:.2f}ml的生命因子"),
+                                Comp.Image.fromURL(pic),
+                                Comp.Plain(f"这是ta的第{item[a2]}次。")
+                            ]
                         yield event.chain_result(chain)
 
                         # 写回数据
