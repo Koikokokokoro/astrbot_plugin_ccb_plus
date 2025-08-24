@@ -18,10 +18,13 @@ import os
 
 DATA_FILE = "data/ccb.json"
 
+LOG_FILE = "data/ccb_log.json"
+
 a1 = "id"       # qq号
 a2 = "num"      # 北朝次数
 a3 = "vol"      # 被注入量
 a4 = "ccb_by"   # 被谁朝了
+a5 = "max"      # 最大值
 
 def get_avatar(user_id: str) -> bytes:
     return f"https://q4.qlogo.cn/headimg_dl?dst_uin={user_id}&spec=640"
@@ -43,6 +46,7 @@ class ccb(Star):
         self.white_list  = config.get("white_list")
         self.selfdo = self.config.get("self_ccb", False)         # 0721 默认为否
         self.crit_prob  =   self.config.get("crit_prob")
+        self.is_log =   self.config.get("is_log")           # 完整日志，默认为false
 
     def read_data(self):
         try:
@@ -59,6 +63,41 @@ class ccb(Star):
                 json.dump(data, f, ensure_ascii=False, indent=2)
         except Exception as e:
             logger.error(f"写入数据错误: {e}")
+
+    # 记录日志
+    def append_log(self, group_id: str, executor_id: str, target_id: str, time: float, vol: float):
+        """
+        记录日志，格式为：
+        {"executor": "...", ````````}
+        """
+        try:
+            # 读取日志，可能用于数据处理
+            if os.path.exists(LOG_FILE):
+                with open(LOG_FILE, 'r', encoding='utf-8') as lf:
+                    try:
+                        logs = json.load(lf)
+                        if not isinstance(logs, list):
+                            logs = []
+                    except Exception:
+                        logs = []
+            else:
+                logs = []
+
+            # 追加日志内容
+            entry = {
+                "group": group_id,
+                "executor": executor_id,
+                "target": target_id,
+                "time": time,
+                "vol": str(round(float(vol), 2))
+            }
+            logs.append(entry)
+
+            # 写回
+            with open(LOG_FILE, 'w', encoding='utf-8') as lf:
+                json.dump(logs, lf, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.error(f"append_log 失败: {e}")
 
     @filter.command("ccb")
     async def ccb(self, event: AstrMessageEvent):
@@ -119,6 +158,7 @@ class ccb(Star):
         V = round(random.uniform(1, 100), 2)
         prob = self.crit_prob
         crit = False
+        is_log = self.is_log
         if random.random() < prob:
             V = round(V * 2, 2)
             crit = True
@@ -147,11 +187,47 @@ class ccb(Star):
                         # 更新 num / vol / ccb_by
                         item[a2] = int(item.get(a2, 0)) + 1
                         item[a3] = round(float(item.get(a3, 0)) + V, 2)
-                        ccb_by = item.get(a4, {})
+
+                        # 添加逻辑：记录max值的产生者
+                        ccb_by = item.get(a4, {}) or {}
                         if send_id in ccb_by:
-                            ccb_by[send_id]["count"] += 1
+                            ccb_by[send_id]["count"] = ccb_by[send_id].get("count", 0) + 1
+                            ccb_by[send_id]["first"] = ccb_by[send_id].get("first", False)
                         else:
-                            ccb_by[send_id] = {"count": 1, "first": False}
+                            ccb_by[send_id] = {"count": 1, "first": False, "max": False}
+
+                        # 添加逻辑：记录max值
+
+                        # 计算max
+                        raw_prev = item.get(a5, None)
+                        prev_max = 0.0
+                        if raw_prev is not None:
+                            try:
+                                prev_max = float(raw_prev)
+                            except (TypeError, ValueError):
+                                prev_max = 0.0
+                        # 如果不存在合法的 max，使用平均值
+                        if prev_max == 0.0:
+                            try:
+                                total_vol = float(item.get(a3, 0))
+                                total_num = int(item.get(a2, 0))
+                                if total_num > 0:
+                                    prev_max = round(total_vol / total_num, 2)
+                                else:
+                                    prev_max = 0.0
+                            except Exception:
+                                prev_max = 0.0
+
+                        if float(V) > prev_max:
+                            item[a5] = round(float(V), 2)
+                            for k in ccb_by:
+                                ccb_by[k]["max"] = False
+                            ccb_by[send_id]["max"] = True
+                        else:
+                            for k in ccb_by:
+                                if "max" not in ccb_by[k]:
+                                    ccb_by[k]["max"] = False
+
                         item[a4] = ccb_by
 
                         if crit:
@@ -168,6 +244,13 @@ class ccb(Star):
                                 Comp.Plain(f"这是ta的第{item[a2]}次。")
                             ]
                         yield event.chain_result(chain)
+
+                        # 是否保留完整日志
+                        if is_log:
+                            try:
+                                self.append_log(group_id, send_id, target_user_id, duration, V)
+                            except Exception as e:
+                                logger.warning(f"记录日志失败: {e}")
 
                         # 写回数据
                         all_data[group_id] = group_data
@@ -208,11 +291,19 @@ class ccb(Star):
                     a1: target_user_id,
                     a2: 1,
                     a3: round(V, 2),
-                    a4: {send_id: {"count": 1, "first": True}}
+                    a4: {send_id: {"count": 1, "first": True, "max": True}},
+                    a5: round(V, 2)
                 }
                 group_data.append(new_record)
                 all_data[group_id] = group_data
                 self.write_data(all_data)
+
+                # 是否保留完整日志
+                if is_log:
+                    try:
+                        self.append_log(group_id, send_id, target_user_id, duration, V)
+                    except Exception as e:
+                        logger.warning(f"记录日志失败: {e}")
 
                 # 随机养胃
                 if random.random() < self.yw_prob:
@@ -237,7 +328,7 @@ class ccb(Star):
             return
 
         top5 = sorted(group_data, key=lambda x: int(x.get(a2, 0)), reverse=True)[:5]
-        msg = "ccb 次数排行榜 TOP5：\n"
+        msg = "被ccb排行榜 TOP5：\n"
         for i, r in enumerate(top5, 1):
             uid = r[a1]
             nick = uid
@@ -263,7 +354,7 @@ class ccb(Star):
             return
 
         top5 = sorted(group_data, key=lambda x: float(x.get(a3, 0)), reverse=True)[:5]
-        msg = "ccb 注入量排行榜 TOP5：\n"
+        msg = "被注入量排行榜 TOP5：\n"
         for i, r in enumerate(top5, 1):
             uid = r[a1]
             nick = uid
@@ -306,6 +397,28 @@ class ccb(Star):
         total_num = int(record.get(a2, 0))
         total_vol = float(record.get(a3, 0))
 
+        raw_max = record.get(a5, None)
+        max_val = 0.0
+        try:
+            if raw_max is not None:
+                max_val = float(raw_max)
+            else:
+                if total_num > 0:
+                    max_val = round(total_vol / total_num, 2)
+        except Exception:
+            max_val = 0.0
+
+        # 计算ccb次数
+        cb_total = 0
+        try:
+            for rec in group_data:
+                by = rec.get(a4, {}) or {}
+                info = by.get(target_user_id)
+                if info:
+                    cb_total += int(info.get("count", 0))
+        except Exception:
+            cb_total = 0
+
         # 找出第一次的操作者
         ccb_by = record.get(a4, {})
         first_actor = None
@@ -336,10 +449,90 @@ class ccb(Star):
             f"【{record.get(a1)} 】\n"
             f"• 破壁人：{first_nick}\n"
             f"• 北朝：{total_num}\n"
-            f"• 诗经：{total_vol:.2f}ml"
+            f"• 朝壁：{cb_total}\n"
+            f"• 诗经：{total_vol:.2f}ml\n"
+            f"• 马克思：{max_val:.2f}ml"
         )
         yield event.plain_result(msg)
 
+    # 单次注入排行榜
+    @filter.command("ccbmax")
+    async def ccbmax(self, event: AstrMessageEvent):
+        """
+        按max值排行并输出产生者
+        """
+        group_id = str(event.get_group_id())
+        group_data = self.read_data().get(group_id, [])
+        if not group_data:
+            yield event.plain_result("当前群暂无ccb记录。")
+            return
+
+        # 计算max
+        entries = []
+        for r in group_data:
+            raw_max = r.get(a5, None)
+            max_val = 0.0
+            try:
+                if raw_max is not None:
+                    max_val = float(raw_max)
+                else:
+                    total_vol = float(r.get(a3, 0))
+                    total_num = int(r.get(a2, 0))
+                    if total_num > 0:
+                        max_val = round(total_vol / total_num, 2)
+            except Exception:
+                max_val = 0.0
+            entries.append((r, float(max_val)))
+
+        # 排序
+        entries.sort(key=lambda x: x[1], reverse=True)
+        top5 = entries[:5]
+
+        msg = "单次最大注入排行榜 TOP5：\n"
+        for i, (r, max_val) in enumerate(top5, 1):
+            uid = r.get(a1)
+            # 解析产生者
+            producer_id = None
+            ccb_by = r.get(a4, {}) or {}
+            for actor_id, info in ccb_by.items():
+                if info.get("max"):
+                    producer_id = actor_id
+                    break
+            # 若没有显式标记，则回退选取count最大者
+            if not producer_id and ccb_by:
+                try:
+                    producer_id = max(ccb_by.items(), key=lambda x: x[1].get("count", 0))[0]
+                except Exception:
+                    producer_id = None
+
+            # 获取昵称
+            nick = uid
+            producer_nick = producer_id or "未知"
+            if event.get_platform_name() == "aiocqhttp":
+                try:
+                    from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
+                    assert isinstance(event, AiocqhttpMessageEvent)
+                    # 获取被ccb者昵称
+                    try:
+                        stranger_info = await event.bot.api.call_action('get_stranger_info', user_id=uid)
+                        nick = stranger_info.get("nick", nick)
+                    except Exception:
+                        pass
+                    # 获取产生者昵称
+                    if producer_id:
+                        try:
+                            p_info = await event.bot.api.call_action('get_stranger_info', user_id=producer_id)
+                            producer_nick = p_info.get("nick", producer_nick)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+            msg += f"{i}. {nick} - 单次最大：{max_val:.2f}ml（{producer_nick}）\n"
+
+        yield event.plain_result(msg)
+
+    '''
     @filter.command("haiwang")
     async def haiwang(self, event: AstrMessageEvent):
         """
@@ -388,6 +581,7 @@ class ccb(Star):
                 # f"(首位：{first_cnt}次，ccb：{actions_cnt}次)\n"
             )
         yield event.plain_result(msg)
+    '''
 
     @filter.command("xnn")
     async def xnn(self, event: AstrMessageEvent):
@@ -429,7 +623,7 @@ class ccb(Star):
         top5 = ranking[:5]
 
         # 构造输出
-        msg = "💎 XNN 榜 TOP5 💎\n"
+        msg = "💎 小南梁 TOP5 💎\n"
         for idx, (uid, xnn_val) in enumerate(ranking[:5], 1):
             nick = uid
             if event.get_platform_name() == "aiocqhttp":
