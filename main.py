@@ -6,10 +6,7 @@ import astrbot.api.message_components as Comp
 from collections import deque
 from astrbot.api import AstrBotConfig
 
-import time
-import json
-import random
-import os
+import json, os, time, random, math
 
 # DATA_FILE = os.path.join(
 #     os.getcwd(),
@@ -25,6 +22,58 @@ a2 = "num"      # 北朝次数
 a3 = "vol"      # 被注入量
 a4 = "ccb_by"   # 被谁朝了
 a5 = "max"      # 最大值
+
+# 评价label
+LABEL_RULES = [
+    {"lt": 0.05, "label": "果蝇抖擞精神开始了交配"},
+    {"min": 0.05, "label": "巴特曼"},
+    {"min": 1,    "label": "兔子"},
+    {"min": 3,    "label": "你正常地简直像个人"},
+    {"min": 8,    "label": "大狗大狗交教胶"},
+    {"min": 30,   "label": "海豚"},
+    {"min": 50,   "label": "阿凡提的驴"},
+    {"min": 80,   "label": "马吊"},
+    {"min": 150,  "label": "猪降临"},
+    {"min": 300,  "label": "恐怖！巨大种猪降临"},
+    {"min": 600,  "label": "虎鲸"},
+    {"min": 1000,  "label": "大象"},
+    {"min": 2000, "label": "长毛猛犸象"},
+    {"min": 7000, "label": "bro是真正的精鱼"},
+]
+
+# 获取label
+def get_label_for_vol(vol):
+    try:
+        v = float(vol)
+    except Exception:
+        return "二进制生物"
+    for r in LABEL_RULES:
+        if "lt" in r:
+            try:
+                if v < float(r["lt"]):
+                    return r["label"]
+            except Exception:
+                continue
+    min_rules = [r for r in LABEL_RULES if "min" in r]
+    try:
+        min_rules = sorted(min_rules, key=lambda x: float(x["min"]))
+    except Exception:
+        pass
+    chosen = None
+    for r in min_rules:
+        try:
+            if v >= float(r["min"]):
+                chosen = r["label"]
+        except Exception:
+            continue
+    if chosen:
+        return chosen
+    if min_rules:
+        try:
+            return min_rules[0]["label"]
+        except Exception:
+            return min_rules[0].get("label", "二进制生物")
+    return "你什么东西，古神吗"
 
 def get_avatar(user_id: str) -> bytes:
     return f"https://q4.qlogo.cn/headimg_dl?dst_uin={user_id}&spec=640"
@@ -47,6 +96,12 @@ class ccb(Star):
         self.selfdo = self.config.get("self_ccb", False)         # 0721 默认为否
         self.crit_prob  =   self.config.get("crit_prob")
         self.is_log =   self.config.get("is_log")           # 完整日志，默认为false
+
+        # 新增概率
+        self.crit_prob_dx = self.config.get("crit_prob_dx")
+        self.tiny_prob = self.config.get("crit_prob_dx")
+        self.tail_prob = self.config.get("tail_prob")
+        self.skew = self.config.get("skew")
 
     def read_data(self):
         try:
@@ -105,7 +160,6 @@ class ccb(Star):
         ccb，顾名思义，用来ccb
         用法： ccb [@]
         """
-        import time, random
 
         group_id = str(event.get_group_id())
         send_id = str(event.get_sender_id())
@@ -135,18 +189,51 @@ class ccb(Star):
             return
 
         # 找到 @ 的目标，否则默认自己
-        target_user_id = next(
-            (str(seg.qq) for seg in event.get_messages()
-             if isinstance(seg, Comp.At) and str(seg.qq) != self_id),
-            send_id
-        )
+        msgs = event.get_messages()
+        send_id = str(event.get_sender_id())
+        self_id = str(event.get_self_id())
+
+        # 收集 At 段与 Plain 段
+        at_segs = [seg for seg in msgs if isinstance(seg, Comp.At)]
+        plain_segments = []
+        for seg in msgs:
+            if isinstance(seg, Comp.Plain):
+                # 兼容不同实现，优先取 text 属性，否则 str()
+                txt = getattr(seg, "text", None)
+                if txt is None:
+                    try:
+                        txt = str(seg)
+                    except Exception:
+                        txt = ""
+                if txt and txt.strip():
+                    plain_segments.append(txt.strip())
+        # 拒绝atbot
+        if any(str(seg.qq) == self_id for seg in at_segs):
+            yield event.plain_result("😅")
+            return
+        # 拒绝at全体
+        at_all_indicators = ("all", "全体", "全体成员", "所有人", "0")
+        if any(str(seg.qq).lower() in at_all_indicators for seg in at_segs):
+            yield event.plain_result("你要寄吧干什么。")
+            return
+        # 不能自交的时候且存在非空参数时
+        if not self.selfdo:
+            if not at_segs and plain_segments:
+                yield event.plain_result("你没 @ 人，那就是要捅自己？")
+                return
+
+        target_at = next((seg for seg in at_segs if str(seg.qq) != self_id), None)
+        if target_at:
+            target_user_id = str(target_at.qq)
+        else:
+            target_user_id = send_id
 
         if target_user_id in self.white_list:
             stranger_info = await event.bot.api.call_action(
                 'get_stranger_info', user_id=target_user_id
             )
             nickname = stranger_info.get("nick", target_user_id)
-            yield event.plain_result(f"{nickname} 的后门被后户之神霸占了，不能ccb（悲")
+            yield event.plain_result(f"{nickname} 的后门被后户之神霸占了（悲")
             return
 
         if target_user_id == actor_id and not self.selfdo:
@@ -155,14 +242,44 @@ class ccb(Star):
 
         # CCB 逻辑
         duration = round(random.uniform(1, 60), 2)
-        V = round(random.uniform(1, 100), 2)
-        prob = self.crit_prob
-        crit = False
-        is_log = self.is_log
-        if random.random() < prob:
-            V = round(V * 2, 2)
+
+        skew = self.skew  # 幂次偏斜，>1 时更偏向小值，越大小值概率越高
+        tiny_prob = self.crit_prob_dx  # 极值概率
+        tail_prob = self.tail_prob  # 进入长尾分布（>200）的概率
+
+        # 确定label表中最大项
+        try:
+            min_vals = [float(r["min"]) for r in LABEL_RULES if "min" in r]
+            max_label_min = max(min_vals) if min_vals else 7000.0
+        except Exception:
+            max_label_min = 7000.0
+        tail_upper = max_label_min + 1000
+
+        # 混合采样：
+        if random.random() < tail_prob:
+            v = math.exp(random.uniform(math.log(1.0), math.log(tail_upper)))
+            V = round(v, 2)
             crit = True
+        else:
+            u = random.random()
+            V_raw = 100.0 * (u ** skew)
+            if random.random() < tiny_prob:
+                V = round(random.uniform(0.001, 0.0499), 4)
+            else:
+                V = max(0.01, round(V_raw, 2))
+
+            # 暴击判定
+            prob = self.crit_prob
+            crit = False
+            if random.random() < prob:
+                V = round(V * 2, 2)
+                crit = True
+
+        is_log = self.is_log
+
         pic = get_avatar(target_user_id)
+
+        label = get_label_for_vol(V)
 
         all_data = self.read_data()
         group_data = all_data.get(group_id, [])
@@ -233,6 +350,7 @@ class ccb(Star):
                         if crit:
                             chain = [
                                 Comp.Plain(f"你和{nickname}发生了{duration}min长的ccb行为，向ta注入了 💥 暴击！{V:.2f}ml的生命因子"),
+                                Comp.Plain(f"评级：{label}"),
                                 Comp.Image.fromURL(pic),
                                 Comp.Plain(f"这是ta的第{item[a2]}次。")
                             ]
@@ -240,6 +358,7 @@ class ccb(Star):
                             # 发送结果
                             chain = [
                                 Comp.Plain(f"你和{nickname}发生了{duration}min长的ccb行为，向ta注入了{V:.2f}ml的生命因子"),
+                                Comp.Plain(f"评级：{label}"),
                                 Comp.Image.fromURL(pic),
                                 Comp.Plain(f"这是ta的第{item[a2]}次。")
                             ]
@@ -259,7 +378,7 @@ class ccb(Star):
                         # 随机养胃
                         if random.random() < self.yw_prob:
                             self.ban_list[actor_id] = now + self.ban_duration
-                            yield event.plain_result("💥你的牛牛炸膛了！满身疮痍，再起不能（悲）")
+                            yield event.plain_result("💥你的牛牛炸膛了！满身疮痍，再起不能（乐）")
 
                         return
             except Exception as e:
@@ -281,6 +400,7 @@ class ccb(Star):
 
                 chain = [
                     Comp.Plain(f"你和{nickname}发生了{duration}min长的ccb行为，向ta注入了{V:.2f}ml的生命因子"),
+                    Comp.Plain(f"评级：{label}"),
                     Comp.Image.fromURL(pic),
                     Comp.Plain("这是ta的初体验。")
                 ]
@@ -315,6 +435,77 @@ class ccb(Star):
                 logger.error(f"报错: {e}")
                 yield event.plain_result("对方拒绝了和你ccb")
                 return
+
+    # debug用 模拟ccb
+    @filter.command("mnccb")
+    async def mnccb(self, event: AstrMessageEvent):
+        import re, math, random
+
+        msgs = event.get_messages()
+        text = ""
+        for seg in msgs:
+            if isinstance(seg, Comp.Plain):
+                txt = getattr(seg, "text", None)
+                if txt is None:
+                    try:
+                        txt = str(seg)
+                    except Exception:
+                        txt = ""
+                text += txt + " "
+        m = re.search(r"(\d+)", text)
+        if not m:
+            yield event.plain_result("用法: /mnccb <正整数>，例如 /mnccb 10")
+            return
+        n = int(m.group(1))
+        if n <= 0:
+            yield event.plain_result("参数必须为正整数。")
+            return
+
+        MAX_SIM = 50
+        if n > MAX_SIM:
+            yield event.plain_result(f"次数过大，最多允许模拟 {MAX_SIM} 次。")
+            return
+
+        tail_prob = self.tail_prob
+        skew = self.skew
+        tiny_prob = self.crit_prob_dx
+
+        try:
+            min_vals = [float(r["min"]) for r in LABEL_RULES if "min" in r]
+            max_label_min = max(min_vals) if min_vals else 7000.0
+        except Exception:
+            max_label_min = 7000.0
+        tail_upper = max_label_min + 1000.0
+
+        lines = [f"模拟 ccb {n} 次："]
+        for i in range(1, n + 1):
+            if random.random() < tail_prob:
+                v = math.exp(random.uniform(math.log(1.0), math.log(tail_upper)))
+                V = round(v, 2)
+                crit = True
+            else:
+                u = random.random()
+                V_raw = 100.0 * (u ** skew)
+                if random.random() < tiny_prob:
+                    V = round(random.uniform(0.001, 0.0499), 4)
+                else:
+                    V = max(0.01, round(V_raw, 2))
+                crit = False
+                try:
+                    prob = self.crit_prob
+                except Exception:
+                    prob = 0.0
+                if random.random() < prob:
+                    V = round(V * 2, 2)
+                    crit = True
+
+            if float(V) < 0.1:
+                V_str = f"{V:.4f}"
+            else:
+                V_str = f"{V:.2f}"
+            status = "💥" if crit else ""
+            lines.append(f"{i}. {V_str}ml {status}")
+        yield event.plain_result("\n".join(lines))
 
     @filter.command("ccbtop")
     async def ccbtop(self, event: AstrMessageEvent):
@@ -532,111 +723,88 @@ class ccb(Star):
 
         yield event.plain_result(msg)
 
-    '''
-    @filter.command("haiwang")
-    async def haiwang(self, event: AstrMessageEvent):
-        """
-        海王榜
-        计算群中最后宫特质的群友
-        """
-        group_id = str(event.get_group_id())
-        all_data = self.read_data()
-        group_data = all_data.get(group_id, [])
-        if not group_data:
-            yield event.plain_result("当前群暂无ccb记录。")
+    @filter.command("ccbhelp", alias={"ccb帮助"})
+    async def ccb_help(self, event: AstrMessageEvent):
+        """帮助信息"""
+        import inspect, re, ast, textwrap
+
+        # 从源码解析各命令及其描述
+        try:
+            src = inspect.getsource(self.__class__)
+            # 匹配形式: @filter.command("命令名", alias={...})
+            pattern = re.compile(
+                r'@filter\.command\(\s*["\']([^"\']+)["\'](?:\s*,\s*alias\s*=\s*([^)]*))?\)\s*\n\s*async\s+def\s+(\w+)\s*\(',
+                re.M | re.S
+            )
+            matches = pattern.findall(src)
+
+            commands = []
+            for cmd, alias_str, func_name in matches:
+                # 别名（虽然之前的全部没写）
+                aliases = []
+                if alias_str and alias_str.strip():
+                    try:
+                        parsed = ast.literal_eval(alias_str)
+                        if isinstance(parsed, dict):
+                            aliases = list(parsed.keys())
+                        elif isinstance(parsed, (list, tuple, set)):
+                            aliases = list(parsed)
+                        else:
+                            aliases = [str(parsed)]
+                    except Exception:
+                        try:
+                            cleaned = alias_str.strip()
+                            cleaned = cleaned.strip("{}[]() ")
+                            aliases = [a.strip(" '\"") for a in cleaned.split(",") if a.strip()]
+                        except Exception:
+                            aliases = []
+
+                # 取函数 docstring 的第一行作为描述
+                short = ""
+                try:
+                    fn = getattr(self, func_name, None)
+                    if fn:
+                        doc = inspect.getdoc(fn) or ""
+                        if doc:
+                            short = doc.splitlines()[0].strip()
+                except Exception:
+                    short = ""
+
+                # 如果没有说明则标记为“无描述”
+                if not short:
+                    short = "无描述"
+
+                commands.append((cmd, aliases, short))
+
+            if not commands:
+                raise RuntimeError("未找到注册命令")
+
+            lines = ["ccb帮助"]
+            for cmd, aliases, short in commands:
+                alias_part = f"（别名: {', '.join(map(str, aliases))}）" if aliases else ""
+                desc = f" - {short}" if short else ""
+                lines.append(f"{cmd}{alias_part}{desc}")
+
+            yield event.plain_result("\n".join(lines))
             return
 
-        # 聚合
-        stats = {}  # actor_id -> {"first": x, "actions": y}
-        for record in group_data:
-            ccb_by = record.get(a4, {})
-            for actor_id, info in ccb_by.items():
-                st = stats.setdefault(actor_id, {"first": 0, "actions": 0})
-                st["actions"] += info.get("count", 0)
-                if info.get("first"):
-                    st["first"] += 1
-
-        # 计算权重并排序
-        ranking = []
-        for actor_id, st in stats.items():
-            weight = st["first"] * 2 + st["actions"]
-            ranking.append((actor_id, st["first"], st["actions"], weight))
-        ranking.sort(key=lambda x: x[3], reverse=True)
-        top5 = ranking[:5]
-
-        # 构造输出
-        msg = "🏆 海王榜 TOP5 🏆\n"
-        for idx, (actor_id, first_cnt, actions_cnt, weight) in enumerate(top5, 1):
-            nick = actor_id
-            if event.get_platform_name() == "aiocqhttp":
-                try:
-                    from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
-                    assert isinstance(event, AiocqhttpMessageEvent)
-                    info = await event.bot.api.call_action("get_stranger_info", user_id=actor_id)
-                    nick = info.get("nick", nick)
-                except:
-                    pass
-            msg += (
-                f"{idx}. {nick} - 海王值：{weight}\n"
-                # f"(首位：{first_cnt}次，ccb：{actions_cnt}次)\n"
+        except Exception as e:
+            # 回退：静态帮助（与之前提供的帮助内容类似）
+            fallback = (
+                "ccb帮助\n\n"
+                "ccb [@目标]\n"
+                "   对@的目标进行ccb（默认不能自交）。\n"
+                "ccbtop\n"
+                "  按被ccb次数排序，显示群内TOP5。\n\n"
+                "ccbvol\n"
+                "  按累计注入量排序，显示群内TOP5。\n\n"
+                "ccbinfo [@目标]\n"
+                "  查询某人的ccb信息：破壁人、被 ccb 次数、被朝次数、累计被注入量、单次最大值。\n"
+                "ccbmax\n"
+                "  单次最大注入排行榜，显示群内TOP5，括号内为该次的操作者。\n\n"
+                "ccbhelp / ccb帮助\n"
+                "  显示本帮助信息。\n\n"
+                "注：看到这一行说明help命令未能正常工作\n"
             )
-        yield event.plain_result(msg)
-    '''
-
-    @filter.command("xnn")
-    async def xnn(self, event: AstrMessageEvent):
-        """
-        XNN榜
-        计算群中最xnn特质的群友
-        """
-        # 配置权重
-        w_num = 1.0
-        w_vol = 0.1
-        w_action = 0.5
-
-        group_id = str(event.get_group_id())
-        all_data = self.read_data()
-        group_data = all_data.get(group_id, [])
-        if not group_data:
-            yield event.plain_result("当前群暂无ccb记录。")
+            yield event.plain_result(fallback)
             return
-
-        # 统计每个人对别人的操作次数
-        actor_actions = {}
-        for record in group_data:
-            ccb_by = record.get(a4, {})
-            for actor_id, info in ccb_by.items():
-                actor_actions[actor_id] = actor_actions.get(actor_id, 0) + info.get("count", 0)
-
-        # 计算xnn值
-        ranking = []
-        for record in group_data:
-            uid = record.get(a1)
-            num = int(record.get(a2, 0))
-            vol = float(record.get(a3, 0))
-            actions = actor_actions.get(uid, 0)
-            xnn_value = num * w_num + vol * w_vol - actions * w_action
-            ranking.append((uid, xnn_value))
-
-        # 排序
-        ranking.sort(key=lambda x: x[1], reverse=True)
-        top5 = ranking[:5]
-
-        # 构造输出
-        msg = "💎 小南梁 TOP5 💎\n"
-        for idx, (uid, xnn_val) in enumerate(ranking[:5], 1):
-            nick = uid
-            if event.get_platform_name() == "aiocqhttp":
-                try:
-                    from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
-                    assert isinstance(event, AiocqhttpMessageEvent)
-                    info = await event.bot.api.call_action("get_stranger_info", user_id=uid)
-                    nick = info.get("nick", nick)
-                except:
-                    pass
-            msg += (
-                f"{idx}. {nick} - XNN值：{xnn_val:.2f} \n"
-                # f"(被ccb次数：{num}，容量：{vol:.2f}ml，对他人ccb：{actions})\n"
-            )
-
-        yield event.plain_result(msg)

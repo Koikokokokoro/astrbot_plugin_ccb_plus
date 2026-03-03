@@ -46,5 +46,23 @@
     "type": "bool",
     "default": "false",
     "hint": "是否独立保留每一条ccb记录，包括双方与注入量。"
+  },
+  "crit_prob_dx": {
+    "description": "极值概率",
+    "type": "float",
+    "default": 0.01,
+    "hint": "极值的概率。"
+  },
+    "tail_prob": {
+    "description": "长尾概率",
+    "type": "float",
+    "default": 0.067,
+    "hint": "进入长尾分布（>200）的概率。"
+  },
+    "skew": {
+    "description": "幂指数",
+    "type": "float",
+    "default": 1.5,
+    "hint": "幂次偏斜，>1 时更偏向小值，值越大小概率越高"
   }
 }
