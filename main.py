@@ -128,8 +128,8 @@ class ccb(Star):
             return False
         try:
             from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
-            assert isinstance(event, AiocqhttpMessageEvent)
-
+            if not isinstance(event, AiocqhttpMessageEvent):
+                return False
             if text is not None:
                 segs = [{"type": "text", "data": {"text": text}}]
             else:
