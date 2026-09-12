@@ -469,7 +469,7 @@ class ccb(Star):
             V = round(V * 2, 2)
             crit = True
         pic = get_avatar(target_user_id)
-        target_avatar_comp = Comp.Image.fromURL(pic) if self.attach_avatar else []
+        target_avatar_comp = [Comp.Image.fromURL(pic)] if self.attach_avatar else []
 
         all_data = self.read_data()
         group_data = all_data.get(group_id, [])
