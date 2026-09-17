@@ -1,4 +1,9 @@
 {
+  "ccb_name": {
+      "type": "string",
+      "default": "ccb",
+      "description": "踩踩背使用的代号"
+  },
   "yw_window": {
     "description": "触发赛博阳痿的窗口时间（秒）",
     "type": "int",
@@ -35,12 +40,41 @@
     "default": false,
     "hint": "为true时当ccb指令未指定对象时进行0721。"
   },
+  "dis_ntr": {
+    "description": "是否禁止NTR",
+    "type": "bool",
+    "default": false,
+    "hint": "当为true时，有老婆/老公的群友不允许被其他人ccb，需要安装astrbot-plugin-wifepicker插件"
+  },
   "crit_prob": {
     "description": "暴击概率",
     "type": "float",
     "default": 0.2,
     "hint": "ccb时暴击的概率。"
   },
+  "attach_avatar": {
+    "description": "附加头像",
+    "type": "bool",
+    "default": true,
+    "hint": "为true时会在消息中附带头像，默认开启，不希望刷屏可以关掉"
+  },
+  "auto_delete": {
+    "description": "自动撤回",
+    "type": "bool",
+    "default": false,
+    "hint": "一段时间后自动撤回消息防止刷屏。"
+  },
+  "auto_delete_delay": {
+        "type": "int",
+        "description": "自动撤回延迟（秒）",
+        "hint": "自动撤回的延迟时间，单位秒。仅在开启“自动撤回”时生效。",
+        "default": 60,
+        "slider": {
+            "min": 3,
+            "max": 90,
+            "step": 1
+        }
+    },
   "is_log": {
     "description": "完整日志记录",
     "type": "bool",

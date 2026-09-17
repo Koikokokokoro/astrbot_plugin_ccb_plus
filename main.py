@@ -10,6 +10,8 @@ from astrbot.api.star import StarTools
 import time
 import json
 import random
+import asyncio
+from datetime import datetime
 import os
 import shutil
 
@@ -50,6 +52,7 @@ class ccb(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
         self.config = config
+        self.ccb_name = config.get("ccb_name") # 踩踩背所用代号
         self.window = config.get("yw_window")                 # 滑动窗口长度（秒）
         self.threshold = config.get("yw_threshold")               # 窗口内最大允许动作次数
         self.ban_duration = config.get("yw_ban_duration")      # 禁用时长（秒）
@@ -58,7 +61,12 @@ class ccb(Star):
         self.yw_prob = config.get("yw_probability")               # 触发概率
         self.white_list  = config.get("white_list")
         self.selfdo = self.config.get("self_ccb", False)         # 0721 默认为否
+        self.dis_ntr = self.config.get("dis_ntr", False)        # 禁止ntr
         self.crit_prob  =   self.config.get("crit_prob")
+        self.attach_avatar = self.config.get("attach_avatar", True)     #附带头像
+        self.auto_delete  =   self.config.get("auto_delete",False)    # 自动撤回
+        self.auto_delete_delay  =   self.config.get("auto_delete_delay",60)
+        self._withdraw_tasks: set = set()                   # 定时撤回任务集合
         self.is_log =   self.config.get("is_log")           # 完整日志，默认为false
 
     #  from issue 6
@@ -76,6 +84,198 @@ class ccb(Star):
                 save_fn()
         except Exception as e:
             logger.warning(f"保存白名单失败: {e}")
+
+    # Copyright (C) 2026 astrbot-plugin-wifepicker
+    # Source: https://github.com/Heximiao/astrbot-plugin-wifepicker
+    # SPDX-License-Identifier: AGPL-3.0-or-later
+    # Modified by nicocatxzc on 2026-08-28
+
+    def _can_auto_delete(self, event: AstrMessageEvent) -> bool:
+        """是否启用自动撤回：auto_delete 开启且目标消息平台为 aiocqhttp。"""
+        return bool(self.auto_delete) and event.get_platform_name() == "aiocqhttp"
+
+    def _get_auto_delete_delay(self) -> int:
+        try:
+            delay = int(self.auto_delete_delay or 60)
+        except Exception:
+            delay = 60
+        return max(1, delay)
+
+    def _schedule_delete_msg(self, client, message_id) -> None:
+        """延迟 auto_delete_delay 秒后撤回指定 message_id 的消息。"""
+        delay = self._get_auto_delete_delay()
+
+        async def _runner():
+            await asyncio.sleep(delay)
+            try:
+                await client.api.call_action("delete_msg", message_id=message_id)
+            except Exception as e:
+                logger.warning(f"自动撤回失败: {e}")
+
+        task = asyncio.create_task(_runner())
+        self._withdraw_tasks.add(task)
+        task.add_done_callback(self._withdraw_tasks.discard)
+
+    async def _send_with_auto_delete(self, event: AstrMessageEvent, chain=None, text=None) -> bool:
+        """
+        当 auto_delete 开启且当前平台为 aiocqhttp 时，直接调用 OneBot API 发送消息，
+        拿到 message_id 后安排延迟 auto_delete_delay 秒自动撤回。
+
+        返回 True 表示消息已通过 OneBot 直接发送（调用方无需再 yield 结果）；
+        返回 False 表示未启用自动撤回或直发失败，应回退到 AstrBot 标准发送路径。
+        """
+        if not self._can_auto_delete(event):
+            return False
+        try:
+            from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
+            if not isinstance(event, AiocqhttpMessageEvent):
+                return False
+            if text is not None:
+                segs = [{"type": "text", "data": {"text": text}}]
+            else:
+                segs = []
+                for seg in chain or []:
+                    if isinstance(seg, Comp.Plain):
+                        segs.append({"type": "text", "data": {"text": seg.text}})
+                    elif isinstance(seg, Comp.At):
+                        segs.append({"type": "at", "data": {"qq": seg.qq}})
+                    elif isinstance(seg, Comp.Image):
+                        image_url = (
+                            getattr(seg, "url", None)
+                            or getattr(seg, "file", None)
+                            or getattr(seg, "path", None)
+                        )
+                        if image_url:
+                            segs.append({"type": "image", "data": {"file": image_url}})
+                        else:
+                            segs.append({"type": "text", "data": {"text": str(seg)}})
+                    else:
+                        segs.append({"type": "text", "data": {"text": str(seg)}})
+
+            group_id = event.get_group_id()
+            if group_id:
+                resp = await event.bot.api.call_action(
+                    "send_group_msg", group_id=int(group_id), message=segs
+                )
+            else:
+                resp = await event.bot.api.call_action(
+                    "send_private_msg",
+                    user_id=int(event.get_sender_id()),
+                    message=segs,
+                )
+
+            message_id = None
+            if isinstance(resp, dict):
+                if "message_id" in resp:
+                    message_id = resp.get("message_id")
+                elif isinstance(resp.get("data"), dict):
+                    message_id = resp["data"].get("message_id")
+
+            if message_id is not None:
+                self._schedule_delete_msg(event.bot, message_id)
+            else:
+                logger.warning(f"无法解析 send_*_msg 返回的 message_id: {resp!r}")
+            return True
+        except Exception as e:
+            logger.warning(f"OneBot 直发失败，回退到标准发送路径: {e}")
+            return False
+    # end autodelete
+
+    # start wifepicker
+
+    def _find_wifepicker_plugin(self):
+        """
+        从 sys.modules 中查找已加载的 astrbot-plugin-wifepicker 插件模块，
+        并返回其插件实例（Star 实例）。
+        优先按精确模块路径获取，其次遍历 sys.modules 模糊匹配 wifepicker。
+        """
+        import sys
+
+        candidate_keys = [
+            "data.plugins.astrbot-plugin-wifepicker",
+            "data.plugins.astrbot_plugin_wifepicker",
+            "astrbot-plugin-wifepicker",
+            "astrbot_plugin_wifepicker",
+        ]
+        for key in candidate_keys:
+            mod = sys.modules.get(key)
+            if mod is not None:
+                plugin = self._get_plugin_instance_from_module(key, mod)
+                if plugin is not None:
+                    return plugin
+
+        # 兜底：遍历 sys.modules 模糊匹配
+        for key, mod in list(sys.modules.items()):
+            if mod is None or "wifepicker" not in key.lower():
+                continue
+            plugin = self._get_plugin_instance_from_module(key, mod)
+            if plugin is not None:
+                return plugin
+        return None
+
+    def _get_plugin_instance_from_module(self, module_path, mod):
+        """根据模块路径/模块对象，从 AstrBot star_map 注册表中获取插件实例。"""
+        try:
+            from astrbot.core.star.star import star_map
+            metadata = star_map.get(module_path)
+            if metadata is not None and metadata.star_cls is not None:
+                return metadata.star_cls
+            # 模块内定义的插件类，通过类的 __module__ 反查 star_map
+            import inspect
+            for attr in vars(mod).values():
+                if inspect.isclass(attr):
+                    metadata = star_map.get(attr.__module__)
+                    if metadata is not None and metadata.star_cls is not None:
+                        return metadata.star_cls
+        except Exception:
+            pass
+        return None
+
+    def _target_has_wife_today(self, group_id: str, target_user_id: str, sender_id: str) -> bool:
+        """
+        参考 astrbot-plugin-wifepicker 的 _cmd_draw_wife ：
+        当某用户今日抽取老婆次数 >= daily_limit（原逻辑将返回"你今天已经有老婆了"）
+        时，判定对方已经有老婆了。
+        最后额外比对操作者：若sender_id为wife_id则放行
+        """
+        try:
+            plugin = self._find_wifepicker_plugin()
+            if plugin is None:
+                return False
+
+            daily_limit = int(plugin.config.get("daily_limit", 1) or 1)
+            if daily_limit <= 0:
+                return False
+
+            records = getattr(plugin, "records", None)
+            if not isinstance(records, dict):
+                return False
+            # wifepicker 的 records 每日首次访问会被 ensure_today_records 重置为当日数据，
+            # 这里校验日期，避免把昨天的记录算作"今天已有老婆"。
+            if records.get("date") != datetime.now().strftime("%Y-%m-%d"):
+                return False
+
+            group_data = records.get("groups", {}).get(str(group_id), {})
+            group_records = (
+                group_data.get("records", []) if isinstance(group_data, dict) else []
+            )
+            # 收集目标用户今日的记录（user_recs）
+            target_records = [
+                r
+                for r in group_records
+                if isinstance(r, dict) and str(r.get("user_id")) == str(target_user_id)
+            ]
+            if len(target_records) < daily_limit:
+                return False
+            # 判断请求者是否是目标的老公
+            if any(str(r.get("wife_id")) == str(sender_id) for r in target_records):
+                return False
+            return True
+        except Exception as e:
+            logger.warning(f"查询 wifepicker 老婆记录失败: {e}")
+            return False
+
+        # end wifepicker
 
     async def _get_nickname(self, event: AstrMessageEvent, user_id: str, strict_event: bool = False) -> str:
         nickname = user_id
@@ -217,7 +417,8 @@ class ccb(Star):
         if now < ban_end:
             remain = int(ban_end - now)
             m, s = divmod(remain, 60)
-            yield event.plain_result(f"嘻嘻，你已经一滴不剩了，养胃还剩 {m}分{s}秒")
+            if not await self._send_with_auto_delete(event, text=f"嘻嘻，你已经一滴不剩了，养胃还剩 {m}分{s}秒"):
+                yield event.plain_result(f"嘻嘻，你已经一滴不剩了，养胃还剩 {m}分{s}秒")
             return
 
         # 窗口时间统计
@@ -230,18 +431,32 @@ class ccb(Star):
         if len(times) > self.threshold:
             self.ban_list[actor_id] = now + self.ban_duration
             times.clear()
-            yield event.plain_result("冲得出来吗你就冲，再冲就给你折了")
+            if not await self._send_with_auto_delete(event, text="冲得出来吗你就冲，再冲就给你折了"):
+                yield event.plain_result("冲得出来吗你就冲，再冲就给你折了")
             return
 
         target_user_id = self._get_target_user_id(event)
 
+        # dis_ntr
+        if self.dis_ntr and self._target_has_wife_today(group_id, target_user_id, send_id):
+            if not await self._send_with_auto_delete(event, text="对方已经有老公了，不要动歪心思哦~"):
+                yield event.plain_result("对方已经有老公了，不要动歪心思哦~")
+            return
+
+        if self.dis_ntr and self._target_has_wife_today(group_id, send_id, target_user_id):
+            if not await self._send_with_auto_delete(event, text="你已经有老婆了，要对ta负责哦~"):
+                yield event.plain_result("你已经有老婆了，要对ta负责哦~")
+            return
+
         if target_user_id in self.white_list and not await self._is_admin(event):
             nickname = await self._get_nickname(event, target_user_id)
-            yield event.plain_result(f"{nickname} 的后门被后户之神霸占了，不能ccb（悲")
+            if not await self._send_with_auto_delete(event, text=f"{nickname} 的后门被后户之神霸占了，不能{self.ccb_name}（悲"):
+                yield event.plain_result(f"{nickname} 的后门被后户之神霸占了，不能{self.ccb_name}（悲")
             return
 
         if target_user_id == actor_id and not self.selfdo:
-            yield event.plain_result("兄啊金箔怎么还能捅到自己的啊（恼）")
+            if not await self._send_with_auto_delete(event, text="兄啊金箔怎么还能捅到自己的啊（恼）"):
+                yield event.plain_result("兄啊金箔怎么还能捅到自己的啊（恼）")
             return
 
         # CCB 逻辑
@@ -254,6 +469,7 @@ class ccb(Star):
             V = round(V * 2, 2)
             crit = True
         pic = get_avatar(target_user_id)
+        target_avatar_comp = [Comp.Image.fromURL(pic)] if self.attach_avatar else []
 
         all_data = self.read_data()
         group_data = all_data.get(group_id, [])
@@ -315,18 +531,19 @@ class ccb(Star):
 
                         if crit:
                             chain = [
-                                Comp.Plain(f"你和{nickname}发生了{duration}min长的ccb行为，向ta注入了 💥 暴击！{V:.2f}ml的生命因子"),
-                                Comp.Image.fromURL(pic),
+                                Comp.Plain(f"你和{nickname}发生了{duration}min长的{self.ccb_name}行为，向ta注入了 💥 暴击！{V:.2f}ml的生命因子\n"),
+                                *(target_avatar_comp),
                                 Comp.Plain(f"这是ta的第{item[a2]}次。")
                             ]
                         else:
                             # 发送结果
                             chain = [
-                                Comp.Plain(f"你和{nickname}发生了{duration}min长的ccb行为，向ta注入了{V:.2f}ml的生命因子"),
-                                Comp.Image.fromURL(pic),
+                                Comp.Plain(f"你和{nickname}发生了{duration}min长的{self.ccb_name}行为，向ta注入了{V:.2f}ml的生命因子\n"),
+                                *(target_avatar_comp),
                                 Comp.Plain(f"这是ta的第{item[a2]}次。")
                             ]
-                        yield event.chain_result(chain)
+                        if not await self._send_with_auto_delete(event, chain=chain):
+                            yield event.chain_result(chain)
 
                         # 是否保留完整日志
                         if is_log:
@@ -342,12 +559,14 @@ class ccb(Star):
                         # 随机养胃
                         if random.random() < self.yw_prob:
                             self.ban_list[actor_id] = now + self.ban_duration
-                            yield event.plain_result("💥你的牛牛炸膛了！满身疮痍，再起不能（悲）")
+                            if not await self._send_with_auto_delete(event, text="💥你的牛牛炸膛了！满身疮痍，再起不能（悲）"):
+                                yield event.plain_result("💥你的牛牛炸膛了！满身疮痍，再起不能（悲）")
 
                         return
             except Exception as e:
                 logger.error(f"报错: {e}")
-                yield event.plain_result("对方拒绝了和你ccb")
+                if not await self._send_with_auto_delete(event, text=f"对方拒绝了和你{self.ccb_name}"):
+                    yield event.plain_result(f"对方拒绝了和你{self.ccb_name}")
                 return
 
         else:
@@ -356,11 +575,12 @@ class ccb(Star):
                 nickname = await self._get_nickname(event, target_user_id, strict_event=True)
 
                 chain = [
-                    Comp.Plain(f"你和{nickname}发生了{duration}min长的ccb行为，向ta注入了{V:.2f}ml的生命因子"),
-                    Comp.Image.fromURL(pic),
+                    Comp.Plain(f"你和{nickname}发生了{duration}min长的{self.ccb_name}行为，向ta注入了{V:.2f}ml的生命因子\n"),
+                    *(target_avatar_comp),
                     Comp.Plain("这是ta的初体验。")
                 ]
-                yield event.chain_result(chain)
+                if not await self._send_with_auto_delete(event, chain=chain):
+                    yield event.chain_result(chain)
 
                 # 构造并保存新记录
                 new_record = {
@@ -384,12 +604,14 @@ class ccb(Star):
                 # 随机养胃
                 if random.random() < self.yw_prob:
                     self.ban_list[actor_id] = now + self.ban_duration
-                    yield event.plain_result("💥你的牛牛炸膛了！满身疮痍，再起不能（悲）")
+                    if not await self._send_with_auto_delete(event, text="💥你的牛牛炸膛了！满身疮痍，再起不能（悲）"):
+                        yield event.plain_result("💥你的牛牛炸膛了！满身疮痍，再起不能（悲）")
 
                 return
             except Exception as e:
                 logger.error(f"报错: {e}")
-                yield event.plain_result("对方拒绝了和你ccb")
+                if not await self._send_with_auto_delete(event, text=f"对方拒绝了和你{self.ccb_name}"):
+                    yield event.plain_result(f"对方拒绝了和你{self.ccb_name}")
                 return
 
     @filter.command("ccbtop")
@@ -400,7 +622,8 @@ class ccb(Star):
         group_id = str(event.get_group_id())
         group_data = self.read_data().get(group_id, [])
         if not group_data:
-            yield event.plain_result("当前群暂无ccb记录。")
+            if not await self._send_with_auto_delete(event, text=f"当前群暂无{self.ccb_name}记录。"):
+                yield event.plain_result(f"当前群暂无{self.ccb_name}记录。")
             return
 
         top5 = sorted(group_data, key=lambda x: int(x.get(a2, 0)), reverse=True)[:5]
@@ -409,7 +632,8 @@ class ccb(Star):
             uid = r[a1]
             nick = await self._get_nickname(event, uid)
             msg += f"{i}. {nick} - 次数：{r[a2]}\n"
-        yield event.plain_result(msg)
+        if not await self._send_with_auto_delete(event, text=msg):
+            yield event.plain_result(msg)
 
     @filter.command("ccbvol")
     async def ccbvol(self, event: AstrMessageEvent):
@@ -419,7 +643,8 @@ class ccb(Star):
         group_id = str(event.get_group_id())
         group_data = self.read_data().get(group_id, [])
         if not group_data:
-            yield event.plain_result("当前群暂无ccb记录。")
+            if not await self._send_with_auto_delete(event, text=f"当前群暂无{self.ccb_name}记录。"):
+                yield event.plain_result(f"当前群暂无{self.ccb_name}记录。")
             return
 
         top5 = sorted(group_data, key=lambda x: float(x.get(a3, 0)), reverse=True)[:5]
@@ -428,7 +653,8 @@ class ccb(Star):
             uid = r[a1]
             nick = await self._get_nickname(event, uid)
             msg += f"{i}. {nick} - 累计注入：{float(r[a3]):.2f}ml\n"
-        yield event.plain_result(msg)
+        if not await self._send_with_auto_delete(event, text=msg):
+            yield event.plain_result(msg)
 
     @filter.command("ccbinfo")
     async def ccbinfo(self, event: AstrMessageEvent):
@@ -446,7 +672,8 @@ class ccb(Star):
         # 查找目标记录
         record = next((r for r in group_data if r.get(a1) == target_user_id), None)
         if not record:
-            yield event.plain_result("该用户暂无ccb记录。")
+            if not await self._send_with_auto_delete(event, text=f"该用户暂无{self.ccb_name}记录。"):
+                yield event.plain_result(f"该用户暂无{self.ccb_name}记录。")
             return
 
         # 总次数 & 总注入量
@@ -501,7 +728,8 @@ class ccb(Star):
             f"• 诗经：{total_vol:.2f}ml\n"
             f"• 马克思：{max_val:.2f}ml"
         )
-        yield event.plain_result(msg)
+        if not await self._send_with_auto_delete(event, text=msg):
+            yield event.plain_result(msg)
 
     # 单次注入排行榜
     @filter.command("ccbmax")
@@ -512,7 +740,8 @@ class ccb(Star):
         group_id = str(event.get_group_id())
         group_data = self.read_data().get(group_id, [])
         if not group_data:
-            yield event.plain_result("当前群暂无ccb记录。")
+            if not await self._send_with_auto_delete(event, text=f"当前群暂无{self.ccb_name}记录。"):
+                yield event.plain_result(f"当前群暂无{self.ccb_name}记录。")
             return
 
         # 计算max
@@ -561,7 +790,8 @@ class ccb(Star):
 
             msg += f"{i}. {nick} - 单次最大：{max_val:.2f}ml（{producer_nick}）\n"
 
-        yield event.plain_result(msg)
+        if not await self._send_with_auto_delete(event, text=msg):
+            yield event.plain_result(msg)
 
     @filter.command("xnn")
     async def xnn(self, event: AstrMessageEvent):
@@ -578,7 +808,8 @@ class ccb(Star):
         all_data = self.read_data()
         group_data = all_data.get(group_id, [])
         if not group_data:
-            yield event.plain_result("当前群暂无ccb记录。")
+            if not await self._send_with_auto_delete(event, text=f"当前群暂无{self.ccb_name}记录。"):
+                yield event.plain_result(f"当前群暂无{self.ccb_name}记录。")
             return
 
         # 统计每个人对别人的操作次数
@@ -611,13 +842,14 @@ class ccb(Star):
                 # f"(被ccb次数：{num}，容量：{vol:.2f}ml，对他人ccb：{actions})\n"
             )
 
-        yield event.plain_result(msg)
+        if not await self._send_with_auto_delete(event, text=msg):
+            yield event.plain_result(msg)
 
     # issue 6
     @filter.command("ccbclear")
     async def ccbclear(self, event: AstrMessageEvent):
         """
-        管理员指令：清除某人的所有 CCB 记录
+        管理员指令：清除某人的所有ccb记录
         用法：ccbclear [@目标]
         """
         group_id = str(event.get_group_id())
@@ -661,17 +893,18 @@ class ccb(Star):
         self.write_data(all_data)
 
         msg = (
-            f"已清除 {target_user_id} 的 CCB 记录：\n"
-            f"删除自身被CCB记录：{removed_self} 条\n"
+            f"已清除 {target_user_id} 的 {self.ccb_name} 记录：\n"
+            f"删除自身被{self.ccb_name}记录：{removed_self} 条\n"
             f"移除朝壁他人记录：{removed_from_others} 次\n"
             f"相关记录已重新校准"
         )
-        yield event.plain_result(msg)
+        if not await self._send_with_auto_delete(event, text=msg):
+            yield event.plain_result(msg)
 
     @filter.command("ccbnodo")
     async def ccbnodo(self, event: AstrMessageEvent):
         """
-        管理员指令：切换目标防被 CCB 状态
+        管理员指令：切换目标防被ccb状态
         用法：ccbnodo [@目标]
         """
         if not await self._is_admin(event):
@@ -682,8 +915,8 @@ class ccb(Star):
         if target_user_id in self.white_list:
             self.white_list = [uid for uid in self.white_list if uid != target_user_id]
             self._save_white_list()
-            yield event.plain_result(f"已解除 {target_user_id} 的防CCB保护")
+            yield event.plain_result(f"已解除 {target_user_id} 的防{self.ccb_name}保护")
         else:
             self.white_list.append(target_user_id)
             self._save_white_list()
-            yield event.plain_result(f"已将 {target_user_id} 加入防CCB保护名单")
+            yield event.plain_result(f"已将 {target_user_id} 加入防{self.ccb_name}保护名单")
