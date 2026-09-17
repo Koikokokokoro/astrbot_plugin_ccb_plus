@@ -5,6 +5,13 @@
 # 新增的内容
 ## 更新前建议备份数据文件（如有需要）可能出现意料外错误
 
+## 17/9/2026
+### 合并 PR [#11](https://github.com/Koikokokokoro/astrbot_plugin_ccb_plus/pull/11)（nicocatxzc）
+可通过插件配置自定义ccb的代号 <br>
+可关闭消息附带的头像，防止刷屏 <br>
+新增自动撤回，需在插件配置中开启（仅aiocqhttp生效）<br>
+新增防牛头人联动，需安装 [astrbot-plugin-wifepicker](https://github.com/Heximiao/astrbot-plugin-wifepicker)（默认关闭）<br>
+
 ## 25/8/2026
 ### 合并 PR [#9](https://github.com/Koikokokokoro/astrbot_plugin_ccb_plus/pull/9)（nicocatxzc）
 旧数据自动复制至插件专属目录 <br>
